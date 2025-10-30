@@ -1,0 +1,16 @@
+{
+  "name": "network-monitor",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "server": "electron server/server-main.js",
+    "client": "electron client/client-main.js"
+  },
+  "dependencies": {
+    "electron": "^28.0.0",
+    "ping": "^0.4.4",
+    "ldapjs": "^2.3.3",
+    "sqlite3": "^5.1.6"
+  }
+}
