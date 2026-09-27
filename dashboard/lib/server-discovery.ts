@@ -112,11 +112,12 @@ export async function scanServerNetworks() {
 
   scanning = true;
   const startedAt = new Date().toISOString();
+  let runId: number | null = null;
 
   try {
     await initDb();
 
-    const runId = await runWithId(
+    runId = await runWithId(
       "INSERT INTO network_scan_runs(started_at,status) VALUES(?,?)",
       [startedAt, "running"]
     );
@@ -212,6 +213,10 @@ export async function scanServerNetworks() {
       alreadyRunning: false
     };
   } catch (error) {
+    if (runId !== null) {
+      await persistRunResult(runId, "error", 0, 0, 0, error).catch(() => {});
+    }
+    console.error("server network discovery failed", error);
     throw error;
   } finally {
     scanning = false;
