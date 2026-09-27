@@ -105,7 +105,9 @@ $value = $env:NETWORK_MONITOR_AD_VALUE
 $operation = $env:NETWORK_MONITOR_AD_OPERATION
 
 if ($ssl) {
-  $path = "LDAPS://" + $server + ":" + $port + "/" + $baseDn
+  # ADSI uses the LDAP provider name even when the transport is LDAPS/SSL.
+  # The SSL behavior is selected with AuthenticationTypes.SecureSocketsLayer.
+  $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
   $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer
 } else {
   $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
