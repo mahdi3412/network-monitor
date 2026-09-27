@@ -3,6 +3,8 @@ const path = require("path");
 const os = require("os");
 const fs = require("fs");
 const crypto = require("crypto");
+const { execFile } = require("child_process");
+const dns = require("dns").promises;
 
 const configPath = path.join(app.getPath("userData"), "config.json");
 const keyPath = path.join(app.getPath("userData"), "agent-key");
@@ -18,13 +20,17 @@ const defaults = {
 
 let mainWindow = null;
 let heartbeatTimer = null;
+let networkHosts = [];
 let runtime = {
   connected: false,
   lastAttempt: null,
   lastSuccess: null,
   lastError: "",
   lastLatencyMs: null,
-  nextHeartbeat: null
+  nextHeartbeat: null,
+  scanning: false,
+  lastScan: null,
+  scanError: ""
 };
 
 function getKey() {
@@ -71,11 +77,16 @@ function collect() {
     gateway: "", dns: "", agentVersion: c.agentVersion
   };
 }
+function ipv4ToInt(ip){return ip.split(".").reduce((n,o)=>(n<<8)+Number(o),0)>>>0}
+function intToIpv4(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join(".")}
+function subnetRange(ip,mask){const i=ipv4ToInt(ip),m=ipv4ToInt(mask),network=(i&m)>>>0,broadcast=(network|(~m>>>0))>>>0;return{network,broadcast}}
+function pingHost(ip){return new Promise(resolve=>{const win=process.platform==="win32";const args=win?["-n","1","-w","450",ip]:["-c","1","-W","1",ip];const started=Date.now();execFile("ping",args,{windowsHide:true,timeout:1500},async error=>{if(error)return resolve({ip,hostname:"",latencyMs:null,reachable:false});let hostname="";try{const names=await dns.reverse(ip);hostname=names[0]||""}catch{}resolve({ip,hostname,latencyMs:Date.now()-started,reachable:true})})})}
+async function scanNetwork(){if(runtime.scanning)return networkHosts;runtime.scanning=true;runtime.scanError="";publish();try{const nets=os.networkInterfaces();let target=null;for(const items of Object.values(nets)){for(const n of items||[]){if(!n.internal&&n.family==="IPv4"&&n.address&&n.netmask){target=n;break}}if(target)break}if(!target)throw new Error("رابط IPv4 فعال پیدا نشد");const {network,broadcast}=subnetRange(target.address,target.netmask);const total=broadcast-network-1;if(total<1)throw new Error("محدوده شبکه معتبر نیست");if(total>1024)throw new Error("شبکه بزرگ‌تر از 1024 میزبان است؛ برای جلوگیری از فشار، اسکن متوقف شد.");const ips=[];for(let n=network+1;n<broadcast;n++)ips.push(intToIpv4(n));const results=[];for(let i=0;i<ips.length;i+=32){const batch=await Promise.all(ips.slice(i,i+32).map(pingHost));results.push(...batch)}networkHosts=results.filter(x=>x.reachable);runtime.lastScan=new Date().toISOString()}catch(e){runtime.scanError=e?.message||"خطای اسکن"}finally{runtime.scanning=false;publish()}return networkHosts}
 function publish() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("agent-state", getState());
 }
 function getState() {
-  return { config: getConfig(), data: collect(), runtime: { ...runtime } };
+  return { config: getConfig(), data: collect(), runtime: { ...runtime }, networkHosts };
 }
 async function heartbeat() {
   const c = getConfig();
@@ -87,7 +98,7 @@ async function heartbeat() {
     const response = await fetch(c.serverUrl.replace(/\/$/, "") + "/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json", ...(getKey() ? { "x-agent-key": getKey() } : {}) },
-      body: JSON.stringify({ ...collect(), latencyMs: runtime.lastLatencyMs })
+      body: JSON.stringify({ ...collect(), latencyMs: runtime.lastLatencyMs, networkHosts })
     });
     const roundTrip = Date.now() - started;
     runtime.lastLatencyMs = roundTrip;
@@ -141,4 +152,5 @@ ipcMain.handle("save-config", (_, incoming) => {
   return getState();
 });
 ipcMain.on("heartbeat-now", () => heartbeat());
+ipcMain.handle("scan-network", () => scanNetwork());
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
