@@ -22,6 +22,7 @@ let mainWindow = null;
 let heartbeatTimer = null;
 let networkScanTimer = null;
 let networkHosts = [];
+let networkInfo = { gateway: "", dns: "" };
 let runtime = {
   connected: false,
   lastAttempt: null,
@@ -96,7 +97,7 @@ function collect() {
     firstName: c.firstName, lastName: c.lastName, personnelId: c.personnelId,
     os: process.platform, osVersion: os.release(),
     cpu: os.cpus()[0]?.model || "", ramMb: Math.round(os.totalmem() / 1024 / 1024),
-    gateway: "", dns: getDnsServers(), agentVersion: c.agentVersion
+    gateway: networkInfo.gateway, dns: networkInfo.dns || getDnsServers(), agentVersion: c.agentVersion
   };
 }
 function ipv4ToInt(ip){return ip.split(".").reduce((n,o)=>(n<<8)+Number(o),0)>>>0}
@@ -160,6 +161,11 @@ async function scanNetwork(){
   finally{runtime.scanning=false;publish()}
   return networkHosts
 }
+async function refreshNetworkInfo() {
+  networkInfo.dns = getDnsServers();
+  networkInfo.gateway = await getGateway();
+  publish();
+}
 function publish() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("agent-state", getState());
 }
@@ -216,7 +222,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "ui.html"));
   mainWindow.on("closed", () => { mainWindow = null; });
 }
-app.whenReady().then(async () => { createWindow(); scheduleNetworkScan(); scanNetwork().catch(()=>{}); heartbeat(); });
+app.whenReady().then(async () => { createWindow(); await refreshNetworkInfo(); scheduleNetworkScan(); scanNetwork().catch(()=>{}); heartbeat(); });
 ipcMain.handle("get-state", () => getState());
 ipcMain.handle("save-config", (_, incoming) => {
   const current = getConfig();
