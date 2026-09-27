@@ -26,6 +26,15 @@ export function run(sql: string, params: any[] = []): Promise<void> {
   });
 }
 
+export function runWithId(sql: string, params: any[] = []): Promise<number> {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (e) {
+      if (e) reject(e);
+      else resolve(this.lastID);
+    });
+  });
+}
+
 export async function initDb(): Promise<void> {
   if (initialized) return;
 
