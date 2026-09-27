@@ -20,6 +20,7 @@ const defaults = {
 
 let mainWindow = null;
 let heartbeatTimer = null;
+let networkScanTimer = null;
 let networkHosts = [];
 let runtime = {
   connected: false,
@@ -194,6 +195,10 @@ async function heartbeat() {
   scheduleHeartbeat();
   publish();
 }
+function scheduleNetworkScan() {
+  if (networkScanTimer) clearTimeout(networkScanTimer);
+  networkScanTimer = setTimeout(async () => { await scanNetwork(); scheduleNetworkScan(); }, 5 * 60 * 1000);
+}
 function scheduleHeartbeat() {
   if (heartbeatTimer) clearTimeout(heartbeatTimer);
   const seconds = Math.max(10, Number(getConfig().heartbeatSeconds) || 30);
@@ -211,7 +216,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, "ui.html"));
   mainWindow.on("closed", () => { mainWindow = null; });
 }
-app.whenReady().then(() => { createWindow(); heartbeat(); });
+app.whenReady().then(async () => { createWindow(); scheduleNetworkScan(); scanNetwork().catch(()=>{}); heartbeat(); });
 ipcMain.handle("get-state", () => getState());
 ipcMain.handle("save-config", (_, incoming) => {
   const current = getConfig();
