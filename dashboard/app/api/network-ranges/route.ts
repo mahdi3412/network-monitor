@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server";
 import { all, initDb, run } from "../../../lib/db";
-import { configuredNetworkRanges } from "../../../lib/network-ranges";
+import {
+  configuredNetworkRanges,
+  inputNetworkRanges,
+  persistedConfiguredNetworkRanges,
+  saveConfiguredNetworkRanges
+} from "../../../lib/network-ranges";
 import { detectServerIpv4Ranges } from "../../../lib/server-network";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+function noStoreJson(value: unknown, status = 200) {
+  return NextResponse.json(value, {
+    status,
+    headers: { "Cache-Control": "no-store" }
+  });
+}
 
 export async function GET() {
   await initDb();
@@ -14,7 +26,10 @@ export async function GET() {
   const serverNow = new Date().toISOString();
 
   for (const subnet of serverRanges) {
-    await run("INSERT INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) VALUES(?,?,?,?,?) ON CONFLICT(agent_id,subnet) DO UPDATE SET last_seen=excluded.last_seen,source='server-route'", ["__server__", subnet, "server-route", serverNow, serverNow]);
+    await run(
+      "INSERT INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) VALUES(?,?,?,?,?) ON CONFLICT(agent_id,subnet) DO UPDATE SET last_seen=excluded.last_seen,source='server-route'",
+      ["__server__", subnet, "server-route", serverNow, serverNow]
+    );
   }
 
   const rows = await all<any>(`
@@ -42,6 +57,7 @@ export async function GET() {
           AND (julianday('now') - julianday(nh.last_seen)) * 86400 <= 600
       ) AS online_hosts
     FROM network_ranges nr
+    WHERE nr.agent_id <> '__server_config__'
     GROUP BY nr.subnet
     ORDER BY nr.subnet ASC
   `);
@@ -59,14 +75,23 @@ export async function GET() {
 
   for (const subnet of serverRanges) {
     if (!bySubnet.has(subnet)) {
-      bySubnet.set(subnet, { subnet, source: "server-route", first_seen: null, last_seen: null, host_count: 0, online_hosts: 0 });
+      bySubnet.set(subnet, {
+        subnet,
+        source: "server-route",
+        first_seen: null,
+        last_seen: null,
+        host_count: 0,
+        online_hosts: 0
+      });
     }
   }
 
-  for (const range of configuredNetworkRanges()) {
-    if (!bySubnet.has(range.subnet)) {
-      bySubnet.set(range.subnet, {
-        subnet: range.subnet,
+  const envConfigured = configuredNetworkRanges().map((range) => range.subnet);
+  const persistedConfigured = (await persistedConfiguredNetworkRanges()).map((range) => range.subnet);
+  for (const subnet of Array.from(new Set([...envConfigured, ...persistedConfigured]))) {
+    if (!bySubnet.has(subnet)) {
+      bySubnet.set(subnet, {
+        subnet,
         source: "configured",
         first_seen: null,
         last_seen: null,
@@ -74,11 +99,46 @@ export async function GET() {
         online_hosts: 0
       });
     } else {
-      bySubnet.get(range.subnet).source = "configured";
+      bySubnet.get(subnet).source = "configured";
     }
   }
 
-  return new NextResponse(JSON.stringify(Array.from(bySubnet.values()).sort((a, b) =>
+  return noStoreJson(Array.from(bySubnet.values()).sort((a, b) =>
     a.subnet.localeCompare(b.subnet, undefined, { numeric: true })
-  )), { headers: { "Cache-Control": "no-store" } });
+  ));
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json().catch(() => null);
+    const rawValue = body?.ranges;
+    const ranges = inputNetworkRanges(rawValue);
+
+    const rawItems = Array.isArray(rawValue)
+      ? rawValue
+      : typeof rawValue === "string"
+        ? rawValue.split(/[\s,;]+/).filter(Boolean)
+        : [];
+
+    const invalid = rawItems.filter((item: unknown) => !inputNetworkRanges([item]).length);
+    if (invalid.length) {
+      return noStoreJson(
+        { ok: false, error: "رنج نامعتبر است", invalid },
+        400
+      );
+    }
+
+    if (ranges.length > 128) {
+      return noStoreJson(
+        { ok: false, error: "تعداد رنج‌ها نباید بیشتر از 128 باشد." },
+        400
+      );
+    }
+
+    const saved = await saveConfiguredNetworkRanges(ranges);
+    return noStoreJson({ ok: true, ranges: saved });
+  } catch (error) {
+    console.error("saving network range settings failed", error);
+    return noStoreJson({ ok: false, error: "ذخیره تنظیمات رنج‌ها ناموفق بود." }, 500);
+  }
 }
