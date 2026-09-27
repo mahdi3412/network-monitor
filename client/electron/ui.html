@@ -7,7 +7,7 @@
 h2{margin:0 0 6px}.sub{color:#8f9bb7;margin:0 0 18px}.box{background:#121a2d;border:1px solid #25304a;border-radius:14px;padding:18px;margin-bottom:14px}
 .status{display:flex;align-items:center;justify-content:space-between;gap:10px}.badge{padding:6px 10px;border-radius:999px;font-size:12px}.online{background:#123d2c;color:#63e6a6}.offline{background:#3b1b24;color:#ff8798}.pending{background:#3c3412;color:#f4d35e}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.item{background:#0e1527;border:1px solid #25304a;border-radius:10px;padding:11px}.item span{display:block;color:#8f9bb7;font-size:12px;margin-bottom:5px}.item b{word-break:break-word}
-label{display:block;margin:11px 0 5px;color:#9eabc6}input{width:100%;background:#0e1527;color:#fff;border:1px solid #30415f;border-radius:8px;padding:10px}button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;background:#31598f;color:#fff;margin-top:12px}.secondary{background:#1c2a46}.actions{display:flex;gap:8px;flex-wrap:wrap}.error{margin-top:12px;color:#ff8798;white-space:pre-wrap;word-break:break-word}.success{margin-top:12px;color:#63e6a6}@media(max-width:580px){.grid{grid-template-columns:1fr}}
+label{display:block;margin:11px 0 5px;color:#9eabc6}input,textarea{width:100%;background:#0e1527;color:#fff;border:1px solid #30415f;border-radius:8px;padding:10px;font-family:inherit}button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;background:#31598f;color:#fff;margin-top:12px}.secondary{background:#1c2a46}.actions{display:flex;gap:8px;flex-wrap:wrap}.error{margin-top:12px;color:#ff8798;white-space:pre-wrap;word-break:break-word}.success{margin-top:12px;color:#63e6a6}@media(max-width:580px){.grid{grid-template-columns:1fr}}
 </style></head>
 <body>
 <h2>Network Monitor Agent</h2><p class="sub">سرویس مانیتورینگ سیستم و ارتباط با سرور</p>
@@ -22,21 +22,21 @@ label{display:block;margin:11px 0 5px;color:#9eabc6}input{width:100%;background:
   <div id="error" class="error"></div>
   <div class="actions"><button id="heartbeat" class="secondary">ارسال Heartbeat</button><button id="scan">اسکن شبکه</button></div><div id="scanMessage" class="success"></div>
 </div>
-<div class="box"><div class="status"><strong>اعضای قابل مشاهده شبکه</strong><span id="scanCount">0</span></div><p class="sub">اسکن از همین سیستم انجام می‌شود و فقط میزبان‌های قابل دسترس در Subnet فعلی را نشان می‌دهد.</p><div id="hosts"></div></div><div class="box"><strong>اطلاعات سیستم</strong><div id="info" class="grid"></div></div>
+<div class="box"><div class="status"><strong>اعضای قابل مشاهده شبکه</strong><span id="scanCount">0</span></div><p class="sub">اسکن از همین سیستم انجام می‌شود و علاوه بر شبکه‌های متصل، Routeهای IPv4 و رنج‌های دستی را بررسی می‌کند. برای رنج‌های سازمانی مثل <b>10.10.20.0/24</b> آن‌ها را خط‌به‌خط وارد کنید.</p><div id="hosts"></div></div><div class="box"><strong>اطلاعات سیستم</strong><div id="info" class="grid"></div></div>
 <div class="box">
   <strong>تنظیمات</strong>
   <label>آدرس سرور</label><input id="serverUrl">
   <label>نام</label><input id="firstName">
   <label>نام خانوادگی</label><input id="lastName">
   <label>شماره پرسنلی</label><input id="personnelId">
-  <label>فاصله Heartbeat (ثانیه، حداقل 10)</label><input id="heartbeatSeconds" type="number" min="10">
+  <label>رنج‌های شبکه برای اسکن (هر رنج در یک خط؛ مثال: 10.10.20.0/24)</label><textarea id="scanRanges" rows="5" placeholder="10.10.20.0/24\n10.10.21.0/24\n10.10.22.0/24"></textarea>\n  <label>فاصله Heartbeat (ثانیه، حداقل 10)</label><input id="heartbeatSeconds" type="number" min="10">
   <button id="save">ذخیره و اتصال مجدد</button><div id="message"></div>
 </div>
 <script>
 const $=id=>document.getElementById(id);
 function formatDate(v){return v?v?new Date(v).toLocaleString("fa-IR"):"-":"-"}
 function render(s){
-  $("serverUrl").value=s.config.serverUrl;$("firstName").value=s.config.firstName;$("lastName").value=s.config.lastName;$("personnelId").value=s.config.personnelId;$("heartbeatSeconds").value=s.config.heartbeatSeconds;
+  $("serverUrl").value=s.config.serverUrl;$("firstName").value=s.config.firstName;$("lastName").value=s.config.lastName;$("personnelId").value=s.config.personnelId;$("heartbeatSeconds").value=s.config.heartbeatSeconds;$("scanRanges").value=s.config.scanRanges||"";
   $("agentId").textContent=s.data.agentId;
   $("lastSuccess").textContent=formatDate(s.runtime.lastSuccess);
   $("latency").textContent=s.runtime.lastLatencyMs!=null?s.runtime.lastLatencyMs+" ms":"-";
@@ -55,5 +55,5 @@ function render(s){
 (async()=>{render(await window.agent.getState());window.agent.onState(render)})();
 $("heartbeat").onclick=()=>window.agent.heartbeatNow();
 $("scan").onclick=async()=>{ $("scan").disabled=true; $("scan").textContent="در حال اسکن..."; const hosts=await window.agent.scanNetwork(); $("scan").disabled=false; $("scan").textContent="اسکن شبکه"; $("scanMessage").textContent="اسکن انجام شد: "+hosts.length+" میزبان قابل دسترس پیدا شد." };
-$("save").onclick=async()=>{const s=await window.agent.saveConfig({serverUrl:$("serverUrl").value,firstName:$("firstName").value,lastName:$("lastName").value,personnelId:$("personnelId").value,heartbeatSeconds:$("heartbeatSeconds").value});render(s);$("message").className="success";$("message").textContent="تنظیمات ذخیره شد و اتصال مجدداً بررسی شد."};
+$("save").onclick=async()=>{const s=await window.agent.saveConfig({serverUrl:$("serverUrl").value,firstName:$("firstName").value,lastName:$("lastName").value,personnelId:$("personnelId").value,heartbeatSeconds:$("heartbeatSeconds").value,scanRanges:$("scanRanges").value});render(s);$("message").className="success";$("message").textContent="تنظیمات ذخیره شد و اتصال مجدداً بررسی شد."};
 </script></body></html>
