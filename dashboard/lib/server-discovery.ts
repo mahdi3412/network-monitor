@@ -105,13 +105,15 @@ export async function scanServerNetworks() {
           latencyMs: await ping(ip)
         })));
 
-        for (const result of results) {
-          if (result.latencyMs == null) continue;
+        const reachable = results.filter((result) => result.latencyMs != null);
+        const enriched = await Promise.all(
+          reachable.map(async (result) => ({ ...result, hostname: await reverseDns(result.ip) }))
+        );
 
-          const hostname = await reverseDns(result.ip);
+        for (const result of enriched) {
           await run(
             "INSERT INTO network_hosts(agent_id,ip,hostname,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,subnet=excluded.subnet,method='icmp',latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
-            ["__server__", result.ip, hostname, "", "server", subnet, "icmp", "unknown", "[]", Math.round(result.latencyMs), 1, now, now, now]
+            ["__server__", result.ip, result.hostname, "", "server", subnet, "icmp", "unknown", "[]", Math.round(result.latencyMs), 1, now, now, now]
           );
           discoveredHosts += 1;
         }
