@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { all, initDb } from "../../../lib/db";
-import { configuredNetworkRanges } from "../../../lib/network-ranges";
+import {
+  configuredNetworkRanges,
+  persistedConfiguredNetworkRanges
+} from "../../../lib/network-ranges";
 import { detectServerIpv4Ranges } from "../../../lib/server-network";
 import { serverScanStatus } from "../../../lib/server-discovery";
 
@@ -20,7 +23,9 @@ export async function GET() {
   ]);
 
   const detectedRanges = await detectServerIpv4Ranges();
-  const configuredRanges = configuredNetworkRanges().map((range) => range.subnet);
+  const envConfiguredRanges = configuredNetworkRanges().map((range) => range.subnet);
+  const persistedRanges = (await persistedConfiguredNetworkRanges()).map((range) => range.subnet);
+  const configuredRanges = Array.from(new Set([...envConfiguredRanges, ...persistedRanges]));
 
   return new NextResponse(JSON.stringify({
     ok: true,
