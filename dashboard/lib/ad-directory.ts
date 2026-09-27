@@ -36,38 +36,31 @@ function boolEnv(value: string | undefined, fallback = false) {
 
 export function getAdConfig() {
   const enabled = boolEnv(process.env.AD_ENABLED);
-  const url = String(process.env.AD_URL || "").trim();
+  const rawUrls = String(process.env.AD_URLS || process.env.AD_URL || "").trim();
+  const urls = rawUrls
+    .split(/[,;\\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => /^[a-z]+:\/\//i.test(item) ? item : `ldap://${item}`);
   const baseDn = String(process.env.AD_BASE_DN || "").trim();
   const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "sAMAccountName").trim();
   const authMode = String(process.env.AD_AUTH_MODE || (process.env.AD_BIND_USER ? "credentials" : "integrated")).trim().toLowerCase();
   const username = String(process.env.AD_BIND_USER || "").trim();
-
   let server = "";
   let port = 389;
   let ssl = false;
-
   try {
-    const parsed = new URL(url || "ldap://");
+    const parsed = new URL(urls[0] || "ldap://");
     server = parsed.hostname;
     port = Number(parsed.port || (parsed.protocol === "ldaps:" ? 636 : 389));
     ssl = parsed.protocol === "ldaps:";
   } catch {}
-
   return {
-    enabled,
-    url,
-    server,
-    port,
-    ssl,
-    baseDn,
-    personnelAttribute,
-    username,
-    authMode,
+    enabled, url: urls[0] || "", urls, server, port, ssl, baseDn, personnelAttribute, username, authMode,
     hasPassword: Boolean(process.env.AD_BIND_PASSWORD),
-    ready: enabled && Boolean(server && baseDn) && (authMode === "integrated" || Boolean(username && process.env.AD_BIND_PASSWORD))
+    ready: enabled && urls.length > 0 && Boolean(baseDn) && (authMode === "integrated" || Boolean(username && process.env.AD_BIND_PASSWORD))
   };
 }
-
 async function runPowerShell(operation: "test" | "user" | "computer", value = "") {
   const config = getAdConfig();
 
@@ -76,7 +69,7 @@ async function runPowerShell(operation: "test" | "user" | "computer", value = ""
 
   const script = String.raw`
 $ErrorActionPreference = "Stop"
-Add-Type -AssemblyName System.DirectoryServices
+Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function Escape-Ldap([string]$Value) {
   $sb = New-Object System.Text.StringBuilder
@@ -93,8 +86,14 @@ function Escape-Ldap([string]$Value) {
   $sb.ToString()
 }
 
-$server = $env:NETWORK_MONITOR_AD_SERVER
-$port = [int]$env:NETWORK_MONITOR_AD_PORT
+function First-AttributeValue($Entry, [string]$Name) {
+  if ($null -ne $Entry.Attributes -and $Entry.Attributes.Contains($Name) -and $Entry.Attributes[$Name].Count -gt 0) {
+    return [string]$Entry.Attributes[$Name][0]
+  }
+  return ""
+}
+
+$serversRaw = $env:NETWORK_MONITOR_AD_SERVERS
 $baseDn = $env:NETWORK_MONITOR_AD_BASE_DN
 $bindUser = $env:NETWORK_MONITOR_AD_USER
 $bindPassword = $env:NETWORK_MONITOR_AD_PASSWORD
@@ -104,98 +103,114 @@ $attribute = $env:NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE
 $value = $env:NETWORK_MONITOR_AD_VALUE
 $operation = $env:NETWORK_MONITOR_AD_OPERATION
 
-# Integrated Windows authentication (Negotiate/Kerberos/NTLM) is performed over LDAP.
-# LDAPS with DirectoryEntry can require explicit credentials/certificate handling and is
-# not needed when the domain controller enforces LDAP signing.
-if ($authMode -eq "integrated") {
-  $path = "LDAP://" + $server + ":389/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
-} elseif ($ssl) {
-  $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer
-} else {
-  $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure
-}
+$servers = @($serversRaw -split "\|" | Where-Object { $_ -and $_.Trim() })
 
-if ($authMode -eq "integrated") {
-  $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList $path,$null,$null,$auth
-} else {
-  $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList $path,$bindUser,$bindPassword,$auth
-}
-$searcher = New-Object System.DirectoryServices.DirectorySearcher($entry)
-$searcher.PageSize = 1000
-$searcher.ClientTimeout = New-TimeSpan -Seconds 8
-$searcher.ServerTimeLimit = New-TimeSpan -Seconds 8
+foreach ($serverUrl in $servers) {
+  $connection = $null
+  try {
+    $uri = [Uri]$serverUrl
+    $server = $uri.Host
+    $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
+    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
 
-if ($operation -eq "test") {
-  $searcher.Filter = "(objectClass=*)"
-  [void]$searcher.PropertiesToLoad.Add("defaultNamingContext")
-  $result = $searcher.FindOne()
-  [PSCustomObject]@{ ok = ($null -ne $result); type = "connection" } | ConvertTo-Json -Compress
-  exit
-}
+    $identifier = New-Object System.DirectoryServices.Protocols.LdapDirectoryIdentifier($server,$port,$true,$false)
 
-if ($operation -eq "user") {
-  $escaped = Escape-Ldap $value
-  $searcher.Filter = "(&(objectCategory=person)(objectClass=user)($attribute=$escaped))"
-  foreach ($p in @($attribute,"employeeID","employeeNumber","sAMAccountName","userPrincipalName","displayName","givenName","sn","department","title","mail","distinguishedName")) {
-    [void]$searcher.PropertiesToLoad.Add($p)
+    if ($authMode -eq "integrated") {
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier)
+      $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+    } else {
+      $credential = New-Object System.Net.NetworkCredential($bindUser,$bindPassword)
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+    }
+
+    $connection.SessionOptions.ProtocolVersion = 3
+    if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
+    $connection.Bind()
+
+    if ($operation -eq "test") {
+      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,"(objectClass=*)",[System.DirectoryServices.Protocols.SearchScope]::Base,"defaultNamingContext")
+      $response = $connection.SendRequest($request)
+      if ($response.Entries.Count -gt 0) {
+        [PSCustomObject]@{ ok = $true; type = "connection"; server = $server; port = $port; ssl = $useSsl; auth = "Negotiate" } | ConvertTo-Json -Compress
+        exit
+      }
+      throw "LDAP bind succeeded but the base DN returned no entries."
+    }
+
+    if ($operation -eq "user") {
+      $escaped = Escape-Ldap $value
+      $filter = "(&(objectCategory=person)(objectClass=user)($attribute=$escaped))"
+      $properties = @($attribute,"employeeID","employeeNumber","sAMAccountName","userPrincipalName","displayName","givenName","sn","department","title","mail","distinguishedName")
+    } elseif ($operation -eq "computer") {
+      $escaped = Escape-Ldap $value
+      $filter = "(&(objectCategory=computer)(|(name=$escaped)(dNSHostName=$escaped)))"
+      $properties = @("name","dNSHostName","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
+    } else {
+      throw "Unsupported AD operation."
+    }
+
+    $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+    $request.SizeLimit = 1
+    $response = $connection.SendRequest($request)
+
+    if ($response.Entries.Count -eq 0) {
+      [PSCustomObject]@{ found = $false; server = $server; port = $port; ssl = $useSsl } | ConvertTo-Json -Compress
+      exit
+    }
+
+    $entry = $response.Entries[0]
+
+    if ($operation -eq "user") {
+      [PSCustomObject]@{
+        found = $true
+        server = $server
+        port = $port
+        ssl = $useSsl
+        personnelId = First-AttributeValue $entry $attribute
+        username = First-AttributeValue $entry "sAMAccountName"
+        userPrincipalName = First-AttributeValue $entry "userPrincipalName"
+        displayName = First-AttributeValue $entry "displayName"
+        firstName = First-AttributeValue $entry "givenName"
+        lastName = First-AttributeValue $entry "sn"
+        department = First-AttributeValue $entry "department"
+        title = First-AttributeValue $entry "title"
+        email = First-AttributeValue $entry "mail"
+        distinguishedName = First-AttributeValue $entry "distinguishedName"
+      } | ConvertTo-Json -Compress
+    } else {
+      [PSCustomObject]@{
+        found = $true
+        server = $server
+        port = $port
+        ssl = $useSsl
+        name = First-AttributeValue $entry "name"
+        dnsHostName = First-AttributeValue $entry "dNSHostName"
+        operatingSystem = First-AttributeValue $entry "operatingSystem"
+        operatingSystemVersion = First-AttributeValue $entry "operatingSystemVersion"
+        description = First-AttributeValue $entry "description"
+        managedBy = First-AttributeValue $entry "managedBy"
+        distinguishedName = First-AttributeValue $entry "distinguishedName"
+      } | ConvertTo-Json -Compress
+    }
+    exit
+  } catch {
+    $detail = $_.Exception
+    $ldap = $_.Exception.InnerException
+    [Console]::Error.WriteLine(("server={0};type={1};message={2};errorCode={3};serverErrorMessage={4}" -f $serverUrl,$detail.GetType().FullName,$detail.Message,
+      $(if ($detail.PSObject.Properties["ErrorCode"]) { $detail.ErrorCode } elseif ($ldap -and $ldap.PSObject.Properties["ErrorCode"]) { $ldap.ErrorCode } else { "" }),
+      $(if ($detail.PSObject.Properties["ServerErrorMessage"]) { $detail.ServerErrorMessage } elseif ($ldap -and $ldap.PSObject.Properties["ServerErrorMessage"]) { $ldap.ServerErrorMessage } else { "" })
+    ))
+  } finally {
+    if ($null -ne $connection) { $connection.Dispose() }
   }
-} elseif ($operation -eq "computer") {
-  $escaped = Escape-Ldap $value
-  $searcher.Filter = "(&(objectCategory=computer)(|(name=$escaped)(dNSHostName=$escaped)))"
-  foreach ($p in @("name","dNSHostName","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")) {
-    [void]$searcher.PropertiesToLoad.Add($p)
-  }
-} else {
-  throw "Unsupported AD operation."
 }
 
-$result = $searcher.FindOne()
-if ($null -eq $result) {
-  [PSCustomObject]@{ found = $false } | ConvertTo-Json -Compress
-  exit
-}
-
-function FirstValue($Properties, $Name) {
-  if ($Properties.Contains($Name) -and $Properties[$Name].Count -gt 0) { return [string]$Properties[$Name][0] }
-  return ""
-}
-
-$props = $result.Properties
-if ($operation -eq "user") {
-  [PSCustomObject]@{
-    found = $true
-    personnelId = FirstValue $props $attribute
-    username = FirstValue $props "sAMAccountName"
-    userPrincipalName = FirstValue $props "userPrincipalName"
-    displayName = FirstValue $props "displayName"
-    firstName = FirstValue $props "givenName"
-    lastName = FirstValue $props "sn"
-    department = FirstValue $props "department"
-    title = FirstValue $props "title"
-    email = FirstValue $props "mail"
-    distinguishedName = FirstValue $props "distinguishedName"
-  } | ConvertTo-Json -Compress
-} else {
-  [PSCustomObject]@{
-    found = $true
-    name = FirstValue $props "name"
-    dnsHostName = FirstValue $props "dNSHostName"
-    operatingSystem = FirstValue $props "operatingSystem"
-    operatingSystemVersion = FirstValue $props "operatingSystemVersion"
-    description = FirstValue $props "description"
-    managedBy = FirstValue $props "managedBy"
-    distinguishedName = FirstValue $props "distinguishedName"
-  } | ConvertTo-Json -Compress
-}
+throw "All configured Active Directory servers failed. Check the server-side error details above."
 `;
 
   const env = {
     ...process.env,
-    NETWORK_MONITOR_AD_SERVER: config.server,
-    NETWORK_MONITOR_AD_PORT: String(config.port),
+    NETWORK_MONITOR_AD_SERVERS: config.urls.join("|"),
     NETWORK_MONITOR_AD_BASE_DN: config.baseDn,
     NETWORK_MONITOR_AD_USER: config.username,
     NETWORK_MONITOR_AD_PASSWORD: process.env.AD_BIND_PASSWORD || "",
@@ -211,24 +226,23 @@ if ($operation -eq "user") {
 
   try {
     await fs.promises.writeFile(scriptPath, script, "utf8");
-
-    const { stdout } = await execFileAsync("powershell.exe", [
-      "-NoProfile",
-      "-NonInteractive",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      scriptPath
-    ], { windowsHide: true, timeout: 15000, env });
-
-    const output = String(stdout || "").trim();
-    if (!output) throw new Error("Active Directory returned an empty response.");
-    return JSON.parse(output);
+    try {
+      const { stdout, stderr } = await execFileAsync("powershell.exe", ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",scriptPath], { windowsHide: true, timeout: 30000, env });
+      const output = String(stdout || "").trim();
+      if (!output) {
+        const detail = String(stderr || "").trim();
+        throw new Error(detail || "Active Directory returned an empty response.");
+      }
+      return JSON.parse(output);
+    } catch (error: any) {
+      const stderr = String(error?.stderr || "").trim();
+      const message = String(error?.message || error);
+      throw new Error(stderr ? message + "\n" + stderr : message);
+    }
   } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
-
 export async function testAdConnection() { return runPowerShell("test"); }
 
 export async function lookupAdUserByPersonnel(personnelId: string): Promise<AdUser | null> {
