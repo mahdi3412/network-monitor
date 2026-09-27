@@ -35,7 +35,7 @@ export function getAdConfig() {
   const enabled = boolEnv(process.env.AD_ENABLED);
   const url = String(process.env.AD_URL || "").trim();
   const baseDn = String(process.env.AD_BASE_DN || "").trim();
-  const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "employeeID").trim();
+  const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "sAMAccountName").trim();
   const authMode = String(process.env.AD_AUTH_MODE || (process.env.AD_BIND_USER ? "credentials" : "integrated")).trim().toLowerCase();
   const username = String(process.env.AD_BIND_USER || "").trim();
 
@@ -95,6 +95,7 @@ $port = [int]$env:NETWORK_MONITOR_AD_PORT
 $baseDn = $env:NETWORK_MONITOR_AD_BASE_DN
 $bindUser = $env:NETWORK_MONITOR_AD_USER
 $bindPassword = $env:NETWORK_MONITOR_AD_PASSWORD
+$authMode = $env:NETWORK_MONITOR_AD_AUTH_MODE
 $ssl = $env:NETWORK_MONITOR_AD_SSL -eq "1"
 $attribute = $env:NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE
 $value = $env:NETWORK_MONITOR_AD_VALUE
@@ -129,7 +130,7 @@ if ($operation -eq "test") {
 if ($operation -eq "user") {
   $escaped = Escape-Ldap $value
   $searcher.Filter = "(&(objectCategory=person)(objectClass=user)($attribute=$escaped))"
-  foreach ($p in @("employeeID","sAMAccountName","userPrincipalName","displayName","givenName","sn","department","title","mail","distinguishedName")) {
+  foreach ($p in @($attribute,"employeeID","employeeNumber","sAMAccountName","userPrincipalName","displayName","givenName","sn","department","title","mail","distinguishedName")) {
     [void]$searcher.PropertiesToLoad.Add($p)
   }
 } elseif ($operation -eq "computer") {
@@ -157,7 +158,7 @@ $props = $result.Properties
 if ($operation -eq "user") {
   [PSCustomObject]@{
     found = $true
-    personnelId = FirstValue $props "employeeID"
+    personnelId = FirstValue $props $attribute
     username = FirstValue $props "sAMAccountName"
     userPrincipalName = FirstValue $props "userPrincipalName"
     displayName = FirstValue $props "displayName"
