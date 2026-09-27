@@ -33,7 +33,10 @@ let runtime = {
   nextHeartbeat: null,
   scanning: false,
   lastScan: null,
-  scanError: ""
+  scanError: "",
+  scanTotal: 0,
+  scanCompleted: 0,
+  scanRange: ""
 };
 
 function getKey() {
@@ -124,6 +127,54 @@ function getRouteRanges() {
     });
   });
 }
+function tcpProbe(ip, port, timeout = 700) {
+  return new Promise(resolve => {
+    if (process.platform === "win32") {
+      const started = Date.now();
+      execFile("powershell", ["-NoProfile","-Command", "$c=New-Object Net.Sockets.TcpClient; try{$c.Connect('" + ip + "'," + port + "); Write-Output 1} catch {Write-Output 0} finally{$c.Close()}"], { windowsHide:true, timeout:timeout+500 }, (_, stdout) => {
+        resolve(String(stdout || "").trim() === "1" ? Math.max(1, Date.now()-started) : null);
+      });
+      return;
+    }
+    resolve(null);
+  });
+}
+async function probeServices(ip) {
+  const ports = [22,80,443,445,515,631,3389,9100];
+  const found = {};
+  for (let i=0;i<ports.length;i+=4) {
+    const batch = await Promise.all(ports.slice(i,i+4).map(async p => [p, await tcpProbe(ip,p)]));
+    for (const [port, latency] of batch) if (latency != null) found[port]=latency;
+  }
+  return found;
+}
+function classifyHost(host, servicePorts) {
+  const name = String(host.hostname || "").toLowerCase();
+  if (host.ip === networkInfo.gateway) return "gateway";
+  if (servicePorts.includes(9100) || servicePorts.includes(631) || servicePorts.includes(515) || /printer|print|پرینتر|پرینت/.test(name)) return "printer";
+  if (/switch|router|gateway|firewall|mikrotik|cisco|ubiquiti|aruba|forti|core|ap|access.?point/.test(name) && (servicePorts.includes(22) || servicePorts.includes(80) || servicePorts.includes(443))) return "network-device";
+  if (servicePorts.includes(445) || servicePorts.includes(3389) || /pc-|desktop|win|server|laptop|workstation/.test(name)) return "windows";
+  if (servicePorts.includes(22)) return "linux-or-network";
+  return "unknown";
+}
+function enrichHost(host) {
+  return new Promise(async resolve => {
+    try {
+      const services = await probeServices(host.ip);
+      const servicePorts = Object.keys(services).map(Number);
+      host.services = servicePorts.map(p => ({
+        22:"SSH",80:"HTTP",443:"HTTPS",445:"SMB",515:"LPD",631:"IPP",3389:"RDP",9100:"RAW-PRINT"[0] ? "RAW-PRINT" : "RAW-PRINT"
+      }[p] || String(p)));
+      host.servicePorts = servicePorts;
+      host.deviceType = classifyHost(host, servicePorts);
+    } catch {
+      host.services = [];
+      host.servicePorts = [];
+      host.deviceType = classifyHost(host, []);
+    }
+    resolve(host);
+  });
+}
 function configuredRanges() {
   const raw=String(getConfig().scanRanges||"");
   return raw.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean).map(cidr=>{
@@ -141,7 +192,7 @@ function configuredRanges() {
 }
 async function scanNetwork(){
   if(runtime.scanning)return networkHosts;
-  runtime.scanning=true;runtime.scanError="";publish();
+  runtime.scanning=true;runtime.scanError="";runtime.scanCompleted=0;runtime.scanTotal=0;runtime.scanRange="";publish();
   try{
     const interfaces=getNetworkInterfaces();
     if(!interfaces.length)throw new Error("رابط IPv4 فعال پیدا نشد");
@@ -151,12 +202,15 @@ async function scanNetwork(){
     for(const n of interfaces){const r=subnetRange(n.address,n.netmask);if(r.broadcast-r.network-1>=1&&r.broadcast-r.network-1<=8192)ranges.push({...r,subnet:n.address+"/"+n.netmask,adapter:n.name});}
     ranges.push(...await getRouteRanges(),...configuredRanges());
     const unique=new Map(ranges.map(r=>[r.subnet,r]));
+    runtime.scanTotal=[...unique.values()].reduce((sum,r)=>sum+Math.max(0,r.broadcast-r.network-1),0);publish();
     const results=new Map();
     for(const target of unique.values()){
+      runtime.scanRange=target.subnet;publish();
       const ips=[];for(let n=target.network+1;n<target.broadcast;n++)ips.push(intToIpv4(n));
       for(let i=0;i<ips.length;i+=48){
         const batch=await Promise.all(ips.slice(i,i+48).map(pingHost));
         for(const r of batch)if(r.reachable){const a=byIp.get(r.ip);results.set(r.ip,{...r,mac:a?.mac||"",adapter:target.adapter,subnet:target.subnet});}
+        runtime.scanCompleted=Math.min(runtime.scanTotal,runtime.scanCompleted+batch.length);publish();
       }
     }
     for(const a of arp){
@@ -165,19 +219,26 @@ async function scanNetwork(){
         if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.adapter,subnet:target.subnet});
       }else if(a.mac)results.get(a.ip).mac=a.mac;
     }
-    if(process.platform==="win32"){
-      for(const r of results.values()){
-        if(r.hostname)continue;
-        try{
-          const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
-          const m=String(out).match(/(?:^|\s)([A-Za-z0-9._-]+)\s+<00>\s+UNIQUE/i);
-          if(m)r.hostname=m[1];
-        }catch{}
-      }
+    const candidates=[...results.values()];
+    for(let i=0;i<candidates.length;i+=12){
+      await Promise.all(candidates.slice(i,i+12).map(async r=>{
+        if(!r.hostname){
+          try{const names=await dns.reverse(r.ip);r.hostname=names[0]||""}catch{}
+        }
+        if(process.platform==="win32"&&!r.hostname){
+          try{
+            const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
+            const m=String(out).match(/(?:^|\s)([A-Za-z0-9._-]+)\s+<00>\s+UNIQUE/i);
+            if(m)r.hostname=m[1];
+          }catch{}
+        }
+        const enriched=await enrichHost(r);
+        Object.assign(r,enriched);
+      }));
+      publish();
     }
-    for(const r of results.values())if(!r.hostname)try{const names=await dns.reverse(r.ip);r.hostname=names[0]||""}catch{}
-    networkHosts=[...results.values()].sort((a,b)=>ipv4ToInt(a.ip)-ipv4ToInt(b.ip));
-    runtime.lastScan=new Date().toISOString();
+    networkHosts=candidates.sort((a,b)=>ipv4ToInt(a.ip)-ipv4ToInt(b.ip));
+    runtime.lastScan=new Date().toISOString();runtime.scanRange="";
   }catch(e){runtime.scanError=e?.message||"خطای اسکن"}
   finally{runtime.scanning=false;publish()}
   return networkHosts
