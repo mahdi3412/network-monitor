@@ -19,7 +19,7 @@ label{display:block;margin:11px 0 5px;color:#9eabc6}input,textarea{width:100%;ba
     <div class="item"><span>Heartbeat بعدی</span><b id="next">-</b></div>
     <div class="item"><span>Agent ID</span><b id="agentId">-</b></div>
   </div>
-  <div id="error" class="error"></div>
+  <div id="error" class="error"></div><div id="scanProgress" class="muted" style="margin-top:10px"></div>
   <div class="actions"><button id="heartbeat" class="secondary">ارسال Heartbeat</button><button id="scan">اسکن شبکه</button></div><div id="scanMessage" class="success"></div>
 </div>
 <div class="box"><div class="status"><strong>اعضای قابل مشاهده شبکه</strong><span id="scanCount">0</span></div><p class="sub">اسکن از همین سیستم انجام می‌شود و علاوه بر شبکه‌های متصل، Routeهای IPv4 و رنج‌های دستی را بررسی می‌کند. برای رنج‌های سازمانی مثل <b>10.10.20.0/24</b> آن‌ها را خط‌به‌خط وارد کنید.</p><div id="hosts"></div></div><div class="box"><strong>اطلاعات سیستم</strong><div id="info" class="grid"></div></div>
@@ -43,7 +43,7 @@ function render(s){
   $("next").textContent=formatDate(s.runtime.nextHeartbeat);
   const b=$("badge");b.className="badge "+(s.runtime.connected?"online":s.runtime.lastAttempt?"offline":"pending");b.textContent=s.runtime.connected?"متصل":"قطع / در انتظار اتصال";
   $("error").textContent=s.runtime.lastError||"";
-  $("scanCount").textContent=(s.networkHosts||[]).length+" میزبان";
+  $("scanCount").textContent=(s.networkHosts||[]).length+" میزبان";\n  const progress=s.runtime.scanTotal?s.runtime.scanCompleted+" / "+s.runtime.scanTotal+" IP":"-";\n  $("scanProgress").textContent=s.runtime.scanning?"در حال اسکن "+(s.runtime.scanRange||"")+" · "+progress:s.runtime.lastScan?"آخرین اسکن: "+formatDate(s.runtime.lastScan):"";
   $("hosts").innerHTML=(s.networkHosts||[]).map(h=>"<div class=\"item\" style=\"margin-top:8px\"><span>"+h.ip+"</span><b>"+(h.hostname||"نامشخص")+" · "+(h.latencyMs!=null?h.latencyMs+" ms":"-")+"</b></div>").join("")||"<div class=\"muted\">هنوز اسکن انجام نشده است.</div>";
   $("info").innerHTML=[
     ["IP",s.data.ip||"-"],["MAC",s.data.mac||"-"],["Adapter",s.data.adapter||"-"],["Computer",s.data.hostname||"-"],
