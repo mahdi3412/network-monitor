@@ -17,12 +17,36 @@ export async function GET() {
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
   const now = Date.now();
-  const payload = rows.map((h) => {
+  const merged = new Map<string, any>();
+
+  for (const row of rows) {
+    const current = merged.get(row.ip);
+    const rowTime = new Date(row.last_seen || row.scanned_at).getTime();
+    const currentTime = current
+      ? new Date(current.last_seen || current.scanned_at).getTime()
+      : -1;
+
+    if (!current || rowTime >= currentTime) {
+      merged.set(row.ip, { ...row });
+    } else {
+      if (!current.hostname && row.hostname) current.hostname = row.hostname;
+      if (!current.mac && row.mac) current.mac = row.mac;
+      if (!current.subnet && row.subnet) current.subnet = row.subnet;
+      if (!current.device_type && row.device_type) current.device_type = row.device_type;
+      if ((!current.services || current.services === "[]") && row.services) current.services = row.services;
+    }
+  }
+
+  const payload = Array.from(merged.values()).map((h) => {
     const timestamp = new Date(h.last_seen || h.scanned_at).getTime();
     const age = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : Number.POSITIVE_INFINITY;
     return {
       ...h,
-      status: h.reachable && age <= 10 * 60 * 1000 ? "online" : age <= 30 * 60 * 1000 ? "recent" : "offline"
+      status: h.reachable && age <= 10 * 60 * 1000
+        ? "online"
+        : age <= 30 * 60 * 1000
+          ? "recent"
+          : "offline"
     };
   });
   return new NextResponse(JSON.stringify(payload), { headers: { "Cache-Control": "no-store" } });
