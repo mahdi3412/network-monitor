@@ -4,6 +4,7 @@ import {
   configuredNetworkRanges,
   persistedConfiguredNetworkRanges
 } from "../../../lib/network-ranges";
+import { getAdConfig } from "../../../lib/ad-directory";
 import { detectServerIpv4Ranges } from "../../../lib/server-network";
 import { serverScanStatus } from "../../../lib/server-discovery";
 
@@ -44,6 +45,14 @@ export async function GET() {
       serverDetectedRanges: detectedRanges,
       configuredRanges,
       configuredRangeCount: configuredRanges.length
+    },
+    directory: {
+      enabled: getAdConfig().enabled,
+      ready: getAdConfig().ready,
+      server: getAdConfig().server || null,
+      port: getAdConfig().port,
+      ssl: getAdConfig().ssl,
+      personnelAttribute: getAdConfig().personnelAttribute
     }
   }), {
     headers: { "Cache-Control": "no-store" }
