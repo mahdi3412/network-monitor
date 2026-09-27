@@ -5,6 +5,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const { execFile } = require("child_process");
 const dns = require("dns").promises;
+const net = require("net");
 
 const configPath = path.join(app.getPath("userData"), "config.json");
 const keyPath = path.join(app.getPath("userData"), "agent-key");
@@ -129,14 +130,20 @@ function getRouteRanges() {
 }
 function tcpProbe(ip, port, timeout = 700) {
   return new Promise(resolve => {
-    if (process.platform === "win32") {
-      const started = Date.now();
-      execFile("powershell", ["-NoProfile","-Command", "$c=New-Object Net.Sockets.TcpClient; try{$c.Connect('" + ip + "'," + port + "); Write-Output 1} catch {Write-Output 0} finally{$c.Close()}"], { windowsHide:true, timeout:timeout+500 }, (_, stdout) => {
-        resolve(String(stdout || "").trim() === "1" ? Math.max(1, Date.now()-started) : null);
-      });
-      return;
-    }
-    resolve(null);
+    const socket = new net.Socket();
+    const started = Date.now();
+    let settled = false;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.setTimeout(timeout);
+    socket.once("connect", () => finish(Math.max(1, Date.now() - started)));
+    socket.once("timeout", () => finish(null));
+    socket.once("error", () => finish(null));
+    try { socket.connect(port, ip); } catch { finish(null); }
   });
 }
 async function probeServices(ip) {
@@ -163,7 +170,7 @@ function enrichHost(host) {
       const services = await probeServices(host.ip);
       const servicePorts = Object.keys(services).map(Number);
       host.services = servicePorts.map(p => ({
-        22:"SSH",80:"HTTP",443:"HTTPS",445:"SMB",515:"LPD",631:"IPP",3389:"RDP",9100:"RAW-PRINT"[0] ? "RAW-PRINT" : "RAW-PRINT"
+        22:"SSH",80:"HTTP",443:"HTTPS",445:"SMB",515:"LPD",631:"IPP",3389:"RDP",9100:"RAW-PRINT"
       }[p] || String(p)));
       host.servicePorts = servicePorts;
       host.deviceType = classifyHost(host, servicePorts);
