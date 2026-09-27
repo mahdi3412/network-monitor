@@ -1,0 +1,1 @@
+const{contextBridge,ipcRenderer}=require("electron");contextBridge.exposeInMainWorld("agent",{getState:()=>ipcRenderer.invoke("get-state"),saveConfig:c=>ipcRenderer.invoke("save-config",c)});
