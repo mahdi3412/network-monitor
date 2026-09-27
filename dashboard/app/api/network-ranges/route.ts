@@ -19,8 +19,17 @@ function noStoreJson(value: unknown, status = 200) {
   });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   await initDb();
+
+  const url = new URL(request.url);
+  if (url.searchParams.get("config") === "1") {
+    const envConfigured = configuredNetworkRanges().map((range) => range.subnet);
+    const persistedConfigured = (await persistedConfiguredNetworkRanges()).map((range) => range.subnet);
+    return noStoreJson({
+      ranges: Array.from(new Set([...envConfigured, ...persistedConfigured]))
+    });
+  }
 
   const serverRanges = await detectServerIpv4Ranges();
   const serverNow = new Date().toISOString();
