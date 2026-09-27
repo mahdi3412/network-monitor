@@ -1,5 +1,8 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 
@@ -197,18 +200,27 @@ if ($operation -eq "user") {
     NETWORK_MONITOR_AD_OPERATION: operation
   };
 
-  const { stdout } = await execFileAsync("powershell.exe", [
-    "-NoProfile",
-    "-NonInteractive",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-Command",
-    script
-  ], { windowsHide: true, timeout: 15000, env });
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "network-monitor-ad-"));
+  const scriptPath = path.join(tempDir, "lookup.ps1");
 
-  const output = String(stdout || "").trim();
-  if (!output) throw new Error("Active Directory returned an empty response.");
-  return JSON.parse(output);
+  try {
+    await fs.promises.writeFile(scriptPath, script, "utf8");
+
+    const { stdout } = await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      scriptPath
+    ], { windowsHide: true, timeout: 15000, env });
+
+    const output = String(stdout || "").trim();
+    if (!output) throw new Error("Active Directory returned an empty response.");
+    return JSON.parse(output);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 export async function testAdConnection() { return runPowerShell("test"); }
