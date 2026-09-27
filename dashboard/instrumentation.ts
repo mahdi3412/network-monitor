@@ -6,23 +6,26 @@ export async function register() {
     Number(process.env.NETWORK_SCAN_INTERVAL_SECONDS || 300)
   );
 
-  const globalState = globalThis as typeof globalThis & {
+  const state = globalThis as typeof globalThis & {
     __networkMonitorServerScanStarted?: boolean;
   };
 
-  if (globalState.__networkMonitorServerScanStarted) return;
-  globalState.__networkMonitorServerScanStarted = true;
+  if (state.__networkMonitorServerScanStarted) return;
+  state.__networkMonitorServerScanStarted = true;
 
-  const runScan = async () => {
+  const port = Number(process.env.PORT || 3000);
+  const triggerScan = async () => {
     try {
-      const { scanServerNetworks } = await import("./lib/server-discovery");
-      await scanServerNetworks();
+      await fetch(`http://127.0.0.1:${port}/api/network-scan`, {
+        method: "POST",
+        cache: "no-store"
+      });
     } catch (error) {
-      console.error("server network discovery failed", error);
+      console.error("server network discovery trigger failed", error);
     } finally {
-      setTimeout(runScan, intervalSeconds * 1000);
+      setTimeout(triggerScan, intervalSeconds * 1000);
     }
   };
 
-  setTimeout(runScan, 5000);
+  setTimeout(triggerScan, 5000);
 }
