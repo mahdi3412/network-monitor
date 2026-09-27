@@ -83,6 +83,9 @@ export default function Home() {
   const [detail, setDetail] = useState<any>(null);
   const [directoryUser, setDirectoryUser] = useState<any>(null);
   const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [adConfig, setAdConfig] = useState<any>(null);
+  const [adTesting, setAdTesting] = useState(false);
+  const [adMessage, setAdMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -106,6 +109,11 @@ export default function Home() {
 
   useEffect(() => {
     load();
+
+    fetch("/api/directory", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setAdConfig(data?.config || null))
+      .catch(() => {});
 
     fetch("/api/network-ranges?config=1", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
@@ -212,6 +220,21 @@ export default function Home() {
       setRangeMessage("ارتباط با سرور برای ذخیره رنج‌ها برقرار نشد.");
     } finally {
       setSavingRanges(false);
+    }
+  }
+
+  async function testActiveDirectory() {
+    setAdTesting(true);
+    setAdMessage("");
+    try {
+      const response = await fetch("/api/directory?test=1", { cache: "no-store" });
+      const data = await response.json();
+      setAdConfig(data?.config || adConfig);
+      setAdMessage(data?.ok ? "اتصال Active Directory موفق بود." : (data?.error || "اتصال به Active Directory ناموفق بود."));
+    } catch {
+      setAdMessage("امکان تست Active Directory وجود ندارد.");
+    } finally {
+      setAdTesting(false);
     }
   }
 
@@ -324,6 +347,20 @@ export default function Home() {
                 <span className="muted">{configuredRangeCount} رنج تنظیم‌شده · {scanning ? "اسکن در حال انجام است" : "اسکن متوقف است"}</span>
               </div>
               {rangeMessage && <p className="range-message">{rangeMessage}</p>}
+            </div>
+
+            <div className="ad-status-card">
+              <div>
+                <h3>Active Directory</h3>
+                <p className="muted">
+                  {adConfig?.enabled ? (adConfig.ready ? "تنظیم شده" : "فعال ولی ناقص") : "غیرفعال"}
+                  {adConfig?.server ? ` · ${adConfig.server}:${adConfig.port}` : ""}
+                </p>
+              </div>
+              <button className="refresh" onClick={testActiveDirectory} disabled={adTesting || !adConfig?.enabled}>
+                {adTesting ? "در حال تست..." : "تست اتصال AD"}
+              </button>
+              {adMessage && <span className="muted">{adMessage}</span>}
             </div>
 
             <div className="inventory-help">
