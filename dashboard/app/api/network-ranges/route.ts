@@ -21,25 +21,27 @@ export async function GET() {
     SELECT
       nr.subnet,
       CASE
-        WHEN SUM(CASE WHEN nr.source = 'configured' THEN 1 ELSE 0 END) > 0
+        WHEN MAX(CASE WHEN nr.source = 'configured' THEN 3 WHEN nr.source = 'server-route' THEN 2 ELSE 1 END) = 3
           THEN 'configured'
+        WHEN MAX(CASE WHEN nr.source = 'configured' THEN 3 WHEN nr.source = 'server-route' THEN 2 ELSE 1 END) = 2
+          THEN 'server-route'
         ELSE 'observed'
       END AS source,
       MIN(nr.first_seen) AS first_seen,
       MAX(nr.last_seen) AS last_seen,
-      COUNT(DISTINCT nh.ip) AS host_count,
-      SUM(
-        CASE
-          WHEN nh.ip IS NOT NULL
-            AND nh.reachable = 1
-            AND (julianday('now') - julianday(nh.last_seen)) * 86400 <= 600
-          THEN 1 ELSE 0
-        END
+      (
+        SELECT COUNT(DISTINCT nh.ip)
+        FROM network_hosts nh
+        WHERE nh.subnet = nr.subnet
+      ) AS host_count,
+      (
+        SELECT COUNT(DISTINCT nh.ip)
+        FROM network_hosts nh
+        WHERE nh.subnet = nr.subnet
+          AND nh.reachable = 1
+          AND (julianday('now') - julianday(nh.last_seen)) * 86400 <= 600
       ) AS online_hosts
     FROM network_ranges nr
-    LEFT JOIN network_hosts nh
-      ON nh.agent_id = nr.agent_id
-      AND nh.subnet = nr.subnet
     GROUP BY nr.subnet
     ORDER BY nr.subnet ASC
   `);
