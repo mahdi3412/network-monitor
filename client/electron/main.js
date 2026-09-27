@@ -15,7 +15,8 @@ const defaults = {
   lastName: "",
   personnelId: "",
   heartbeatSeconds: 30,
-  agentVersion: "1.1.0"
+  agentVersion: "1.1.0",
+  scanRanges: ""
 };
 
 let mainWindow = null;
@@ -103,23 +104,40 @@ function collect() {
 function ipv4ToInt(ip){return ip.split(".").reduce((n,o)=>(n<<8)+Number(o),0)>>>0}
 function intToIpv4(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join(".")}
 function subnetRange(ip,mask){const i=ipv4ToInt(ip),m=ipv4ToInt(mask),network=(i&m)>>>0,broadcast=(network|(~m>>>0))>>>0;return{network,broadcast}}
-function pingHost(ip){return new Promise(resolve=>{const win=process.platform==="win32";const args=win?["-n","1","-w","450",ip]:["-c","1","-W","1",ip];const started=Date.now();execFile("ping",args,{windowsHide:true,timeout:1500},async error=>{if(error)return resolve({ip,hostname:"",latencyMs:null,reachable:false,method:"icmp"});let hostname="";try{const names=await dns.reverse(ip);hostname=names[0]||""}catch{}resolve({ip,hostname,latencyMs:Date.now()-started,reachable:true,method:"icmp"})})})}
-function getArpTable() {
+function pingHost(ip){return new Promise(resolve=>{const win=process.platform==="win32";const args=win?["-n","1","-w","500",ip]:["-c","1","-W","1",ip];const started=Date.now();execFile("ping",args,{windowsHide:true,timeout:1700},async error=>{if(error)return resolve({ip,hostname:"",latencyMs:null,reachable:false,method:"icmp"});let hostname="";try{const names=await dns.reverse(ip);hostname=names[0]||""}catch{}resolve({ip,hostname,latencyMs:Date.now()-started,reachable:true,method:"icmp"})})})}
+function getRouteRanges() {
   return new Promise(resolve => {
     if (process.platform !== "win32") return resolve([]);
-    execFile("arp", ["-a"], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
+    execFile("route", ["print", "-4"], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
       if (error) return resolve([]);
       const rows = [];
-      let iface = "";
       for (const line of String(stdout || "").split(/\r?\n/)) {
-        const im = line.match(/Interface:\s+(\d+\.\d+\.\d+\.\d+)/i);
-        if (im) { iface = im[1]; continue; }
-        const m = line.trim().match(/^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f-]{17})\s+(dynamic|static)$/i);
-        if (m) rows.push({ ip:m[1], mac:m[2].replace(/-/g,":").toLowerCase(), interfaceIp:iface });
+        const m = line.trim().match(/^(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+\\d+$/);
+        if (!m || m[1] === "0.0.0.0") continue;
+        const maskInt = ipv4ToInt(m[2]);
+        const network = (ipv4ToInt(m[1]) & maskInt) >>> 0;
+        const broadcast = (network | (~maskInt >>> 0)) >>> 0;
+        const total = broadcast - network - 1;
+        if (total >= 1 && total <= 8192) rows.push({ network, broadcast, subnet: intToIpv4(network)+"/"+m[2], adapter:"routed" });
       }
       resolve(rows);
     });
   });
+}
+function configuredRanges() {
+  const raw=String(getConfig().scanRanges||"");
+  return raw.split(/[\\s,;]+/).map(x=>x.trim()).filter(Boolean).map(cidr=>{
+    const parts=cidr.split("/");
+    if(parts.length!==2||!/^\\d+$/.test(parts[1])) return null;
+    const prefix=Math.max(0,Math.min(32,Number(parts[1])));
+    const mask=prefix===0?0:(0xffffffff << (32-prefix))>>>0;
+    const ipInt=ipv4ToInt(parts[0]);
+    const network=(ipInt&mask)>>>0;
+    const broadcast=(network|(~mask>>>0))>>>0;
+    const total=broadcast-network-1;
+    if(total<1||total>8192) return null;
+    return {network,broadcast,subnet:intToIpv4(network)+"/"+prefix,adapter:"configured"};
+  }).filter(Boolean);
 }
 async function scanNetwork(){
   if(runtime.scanning)return networkHosts;
@@ -129,32 +147,35 @@ async function scanNetwork(){
     if(!interfaces.length)throw new Error("رابط IPv4 فعال پیدا نشد");
     const arp=await getArpTable();
     const byIp=new Map(arp.map(x=>[x.ip,x]));
+    const ranges=[];
+    for(const n of interfaces){const r=subnetRange(n.address,n.netmask);if(r.broadcast-r.network-1>=1&&r.broadcast-r.network-1<=8192)ranges.push({...r,subnet:n.address+"/"+n.netmask,adapter:n.name});}
+    ranges.push(...await getRouteRanges(),...configuredRanges());
+    const unique=new Map(ranges.map(r=>[r.subnet,r]));
     const results=new Map();
-    for(const target of interfaces){
-      const {network,broadcast}=subnetRange(target.address,target.netmask);
-      const total=broadcast-network-1;
-      if(total<1)continue;
-      if(total>1024){continue;}
-      const ips=[];for(let n=network+1;n<broadcast;n++)ips.push(intToIpv4(n));
-      for(let i=0;i<ips.length;i+=32){
-        const batch=await Promise.all(ips.slice(i,i+32).map(pingHost));
-        for(const r of batch){
-          if(r.reachable){
-            const a=byIp.get(r.ip);
-            results.set(r.ip,{...r,mac:a?.mac||"",adapter:target.name,subnet:target.address+"/"+target.netmask});
-          }
-        }
+    for(const target of unique.values()){
+      const ips=[];for(let n=target.network+1;n<target.broadcast;n++)ips.push(intToIpv4(n));
+      for(let i=0;i<ips.length;i+=48){
+        const batch=await Promise.all(ips.slice(i,i+48).map(pingHost));
+        for(const r of batch)if(r.reachable){const a=byIp.get(r.ip);results.set(r.ip,{...r,mac:a?.mac||"",adapter:target.adapter,subnet:target.subnet});}
       }
     }
     for(const a of arp){
       if(!results.has(a.ip)){
-        const target=interfaces.find(x=>{const r=subnetRange(x.address,x.netmask),n=ipv4ToInt(a.ip);return n>r.network&&n<r.broadcast;});
-        if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.name,subnet:target.address+"/"+target.netmask});
+        const target=[...unique.values()].find(x=>{const n=ipv4ToInt(a.ip);return n>x.network&&n<x.broadcast;});
+        if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.adapter,subnet:target.subnet});
       }else if(a.mac)results.get(a.ip).mac=a.mac;
     }
-    for(const r of results.values()){
-      if(!r.hostname)try{const names=await dns.reverse(r.ip);r.hostname=names[0]||""}catch{}
+    if(process.platform==="win32"){
+      for(const r of results.values()){
+        if(r.hostname)continue;
+        try{
+          const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
+          const m=String(out).match(/<00>\\s+UNIQUE\\s+([A-Za-z0-9._-]+)/i);
+          if(m)r.hostname=m[1];
+        }catch{}
+      }
     }
+    for(const r of results.values())if(!r.hostname)try{const names=await dns.reverse(r.ip);r.hostname=names[0]||""}catch{}
     networkHosts=[...results.values()].sort((a,b)=>ipv4ToInt(a.ip)-ipv4ToInt(b.ip));
     runtime.lastScan=new Date().toISOString();
   }catch(e){runtime.scanError=e?.message||"خطای اسکن"}
@@ -232,6 +253,7 @@ ipcMain.handle("save-config", (_, incoming) => {
     firstName: String(incoming.firstName || "").trim(),
     lastName: String(incoming.lastName || "").trim(),
     personnelId: String(incoming.personnelId || "").trim(),
+    scanRanges: String(incoming.scanRanges || current.scanRanges || "").trim(),
     heartbeatSeconds: Math.max(10, Number(incoming.heartbeatSeconds) || 30)
   };
   saveConfig(next);
