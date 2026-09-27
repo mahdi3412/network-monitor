@@ -81,6 +81,8 @@ export default function Home() {
   const [deviceType, setDeviceType] = useState("all");
   const [tab, setTab] = useState<"clients" | "network">("clients");
   const [detail, setDetail] = useState<any>(null);
+  const [directoryUser, setDirectoryUser] = useState<any>(null);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -215,7 +217,28 @@ export default function Home() {
 
   async function openDetail(id: string) {
     const response = await fetch("/api/clients/" + encodeURIComponent(id), { cache: "no-store" });
-    if (response.ok) setDetail(await response.json());
+    if (!response.ok) return;
+
+    const data = await response.json();
+    setDetail(data);
+    setDirectoryUser(null);
+
+    const personnelId = String(data?.client?.personnel_id || "").trim();
+    if (!personnelId) return;
+
+    setDirectoryLoading(true);
+    try {
+      const directoryResponse = await fetch(
+        "/api/directory?personnelId=" + encodeURIComponent(personnelId),
+        { cache: "no-store" }
+      );
+      if (directoryResponse.ok) {
+        const directory = await directoryResponse.json();
+        setDirectoryUser(directory?.user || null);
+      }
+    } finally {
+      setDirectoryLoading(false);
+    }
   }
 
   return (
@@ -412,7 +435,7 @@ export default function Home() {
               <h2>{detail.client.hostname}</h2>
               <p className="muted">{detail.client.ip || "-"} · {detail.client.status}</p>
             </div>
-            <button className="refresh" onClick={() => setDetail(null)}>بستن</button>
+            <button className="refresh" onClick={() => { setDetail(null); setDirectoryUser(null); }}>بستن</button>
           </div>
 
           <div className="detail-grid">
@@ -425,6 +448,24 @@ export default function Home() {
             <div><b>CPU</b><span>{detail.client.cpu || "-"}</span></div>
             <div><b>RAM</b><span>{detail.client.ram_mb ? detail.client.ram_mb + " MB" : "-"}</span></div>
             <div><b>Agent</b><span>{detail.client.agent_version || "-"}</span></div>
+          </div>
+
+          <div className="directory-card">
+            <h3>اطلاعات Active Directory</h3>
+            {directoryLoading ? (
+              <p className="muted">در حال جستجو با شماره پرسنلی...</p>
+            ) : directoryUser ? (
+              <div className="detail-grid compact">
+                <div><b>AD Username</b><span>{directoryUser.username || "-"}</span></div>
+                <div><b>نام AD</b><span>{directoryUser.displayName || "-"}</span></div>
+                <div><b>UPN</b><span>{directoryUser.userPrincipalName || "-"}</span></div>
+                <div><b>Department</b><span>{directoryUser.department || "-"}</span></div>
+                <div><b>Title</b><span>{directoryUser.title || "-"}</span></div>
+                <div><b>Email</b><span>{directoryUser.email || "-"}</span></div>
+              </div>
+            ) : (
+              <p className="muted">برای این شماره پرسنلی رکوردی از AD پیدا نشد یا اتصال AD هنوز تنظیم نشده است.</p>
+            )}
           </div>
 
           <h3>اعضای قابل مشاهده شبکه</h3>
