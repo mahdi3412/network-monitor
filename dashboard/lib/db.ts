@@ -112,6 +112,21 @@ export async function initDb(): Promise<void> {
     UNIQUE(agent_id, ip)
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS directory_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    personnel_id TEXT UNIQUE NOT NULL,
+    username TEXT,
+    user_principal_name TEXT,
+    display_name TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    department TEXT,
+    title TEXT,
+    email TEXT,
+    distinguished_name TEXT,
+    last_sync TEXT NOT NULL
+  )`);
+
   const clients = await all<any>("PRAGMA table_info(clients)");
   if (!clients.some((column) => column.name === "api_key_hash")) {
     await run("ALTER TABLE clients ADD COLUMN api_key_hash TEXT");
@@ -159,6 +174,7 @@ export async function initDb(): Promise<void> {
   await run("CREATE INDEX IF NOT EXISTS idx_network_scan_runs_started_at ON network_scan_runs(started_at)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_hosts_subnet_last_seen ON network_hosts(subnet,last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_ranges_last_seen ON network_ranges(last_seen)");
+  await run("CREATE INDEX IF NOT EXISTS idx_directory_users_username ON directory_users(username)");
   await run("INSERT OR IGNORE INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) SELECT agent_id,subnet,'observed',MIN(first_seen),MAX(last_seen) FROM network_hosts WHERE subnet<>'' GROUP BY agent_id,subnet");
   initialized = true;
 }
