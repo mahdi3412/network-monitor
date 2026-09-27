@@ -32,6 +32,8 @@ type NetworkHost = {
   adapter: string;
   subnet: string;
   method: string;
+  device_type: string;
+  services: string;
   latency_ms: number | null;
   reachable: number;
   scanned_at: string;
@@ -97,7 +99,8 @@ export default function Home() {
   );
 
   const filteredHosts = useMemo(() => {
-    const q = query.toLowerCase();
+    const typeFilter = query.startsWith("__type:") ? query.slice(7) : "";
+    const q = typeFilter ? "" : query.toLowerCase();
     return hosts.filter((h) => {
       const text = [h.ip, h.hostname, h.mac, h.adapter, h.subnet, h.agent_hostname, h.agent_ip]
         .join(" ")
@@ -106,7 +109,8 @@ export default function Home() {
         text.includes(q) &&
         (subnet === "all" || h.subnet === subnet) &&
         (method === "all" || h.method === method) &&
-        (status === "all" || h.status === status)
+        (status === "all" || h.status === status) &&
+        (!typeFilter || h.device_type === typeFilter)
       );
     });
   }, [hosts, query, subnet, method, status]);
@@ -115,6 +119,7 @@ export default function Home() {
   const recentClients = clients.filter((c) => c.status === "recent").length;
   const onlineHosts = hosts.filter((h) => h.status === "online").length;
   const recentHosts = hosts.filter((h) => h.status === "recent").length;
+  const deviceTypeCounts = useMemo(() => hosts.reduce<Record<string, number>>((acc, h) => { const t = h.device_type || "unknown"; acc[t] = (acc[t] || 0) + 1; return acc; }, {}), [hosts]);
 
   async function openDetail(id: string) {
     const response = await fetch("/api/clients/" + encodeURIComponent(id), { cache: "no-store" });
@@ -149,6 +154,18 @@ export default function Home() {
         <div className="card">
           <span className="muted">رنج‌های کشف‌شده</span>
           <div className="stat">{subnets.length}</div>
+        </div>
+        <div className="card">
+          <span className="muted">Windows</span>
+          <div className="stat">{deviceTypeCounts.windows || 0}</div>
+        </div>
+        <div className="card">
+          <span className="muted">Printer</span>
+          <div className="stat">{deviceTypeCounts.printer || 0}</div>
+        </div>
+        <div className="card">
+          <span className="muted">Network Device</span>
+          <div className="stat">{deviceTypeCounts["network-device"] || 0}</div>
         </div>
       </section>
 
@@ -243,6 +260,11 @@ export default function Home() {
               </select>
             </div>
 
+            <div className="filters">
+              <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="all">همه وضعیت‌ها</option><option value="online">فعال</option><option value="recent">اخیراً دیده‌شده</option><option value="offline">قدیمی</option>
+              </select>
+            </div>
             <div className="inventory-summary">
               <span>{filteredHosts.length} نتیجه</span>
               <span>{onlineHosts} فعال</span>
@@ -259,6 +281,8 @@ export default function Home() {
                     <th>Hostname</th>
                     <th>MAC</th>
                     <th>Subnet</th>
+                    <th>نوع</th>
+                    <th>Services</th>
                     <th>روش</th>
                     <th>Latency</th>
                     <th>Agent</th>
@@ -276,6 +300,8 @@ export default function Home() {
                       <td>{h.hostname || "-"}</td>
                       <td>{h.mac || "-"}</td>
                       <td>{h.subnet || "-"}</td>
+                      <td>{h.device_type || "unknown"}</td>
+                      <td>{h.services ? JSON.parse(h.services).join(", ") : "-"}</td>
                       <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
                       <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
                       <td>{h.agent_hostname || h.agent_ip || "-"}</td>
@@ -285,7 +311,7 @@ export default function Home() {
                   ))}
                   {!filteredHosts.length && (
                     <tr>
-                      <td colSpan={10} className="muted">
+                      <td colSpan={12} className="muted">
                         در این فیلتر نتیجه‌ای پیدا نشد.
                       </td>
                     </tr>
