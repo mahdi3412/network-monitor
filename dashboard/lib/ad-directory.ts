@@ -38,7 +38,7 @@ export function getAdConfig() {
   const enabled = boolEnv(process.env.AD_ENABLED);
   const rawUrls = String(process.env.AD_URLS || process.env.AD_URL || "").trim();
   const urls = rawUrls
-    .split(/[,;\\s]+/)
+    .split(/[,;\s]+/)
     .map((item) => item.trim())
     .filter(Boolean)
     .map((item) => /^[a-z]+:\/\//i.test(item) ? item : `ldap://${item}`);
