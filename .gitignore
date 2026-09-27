@@ -1,5 +1,11 @@
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
+node_modules/
+.next/
+out/
+dist/
+*.log
+.env
+.env.local
+data/*.db
+data/*.sqlite
+client/config.json
+.DS_Store
