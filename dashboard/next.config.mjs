@@ -3,7 +3,8 @@ const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   experimental: {
-    instrumentationHook: true
+    instrumentationHook: true,
+    serverComponentsExternalPackages: ["sqlite3"]
   }
 };
 
