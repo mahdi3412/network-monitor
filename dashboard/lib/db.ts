@@ -97,6 +97,7 @@ export async function initDb(): Promise<void> {
     agent_id TEXT NOT NULL,
     ip TEXT NOT NULL,
     hostname TEXT,
+    username TEXT,
     mac TEXT,
     adapter TEXT,
     subnet TEXT,
@@ -124,6 +125,9 @@ export async function initDb(): Promise<void> {
   const networkHosts = await all<any>("PRAGMA table_info(network_hosts)");
   const additions: Promise<void>[] = [];
 
+  if (!networkHosts.some((column) => column.name === "username")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN username TEXT"));
+  }
   if (!networkHosts.some((column) => column.name === "mac")) {
     additions.push(run("ALTER TABLE network_hosts ADD COLUMN mac TEXT"));
   }
