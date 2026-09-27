@@ -71,6 +71,8 @@ export async function initDb(): Promise<void> {
     adapter TEXT,
     subnet TEXT,
     method TEXT,
+    device_type TEXT,
+    services TEXT,
     latency_ms INTEGER,
     reachable INTEGER NOT NULL,
     scanned_at TEXT NOT NULL,
@@ -103,6 +105,13 @@ export async function initDb(): Promise<void> {
   }
   if (!networkHosts.some((column) => column.name === "method")) {
     additions.push(run("ALTER TABLE network_hosts ADD COLUMN method TEXT"));
+  }
+
+  if (!networkHosts.some((column) => column.name === "device_type")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN device_type TEXT"));
+  }
+  if (!networkHosts.some((column) => column.name === "services")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN services TEXT"));
   }
 
   if (!networkHosts.some((column) => column.name === "first_seen")) {
