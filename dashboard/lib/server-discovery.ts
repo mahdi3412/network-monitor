@@ -26,7 +26,7 @@ function rangeToBounds(cidr: string) {
     return null;
   }
 
-  const mask = prefix === 32 ? 0xffffffff : (0xffffffff << (32 - prefix)) >>> 0;
+  const mask = (0xffffffff << (32 - prefix)) >>> 0;
   const network = (ipv4ToInt(ip) & mask) >>> 0;
   const broadcast = (network | (~mask >>> 0)) >>> 0;
   const total = broadcast - network - 1;
@@ -80,6 +80,101 @@ async function reverseDns(ip: string) {
   }
 }
 
+async function getArpTable() {
+  const result = new Map<string, string>();
+
+  try {
+    if (process.platform === "win32") {
+      const { stdout } = await execFileAsync("arp", ["-a"], {
+        windowsHide: true,
+        timeout: 3000
+      });
+
+      for (const line of String(stdout || "").split(/\r?\n/)) {
+        const match = line.trim().match(/^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f]{2}[-:]){5}[0-9a-f]{2}\s+/i);
+        if (!match) continue;
+
+        const parts = line.trim().split(/\s+/);
+        const mac = parts[1]?.replace(/-/g, ":").toLowerCase();
+        if (mac) result.set(parts[0], mac);
+      }
+    } else {
+      const { stdout } = await execFileAsync("ip", ["neigh"], { timeout: 3000 });
+
+      for (const line of String(stdout || "").split(/\r?\n/)) {
+        const match = line.match(/^(\d+\.\d+\.\d+\.\d+) .* lladdr ([0-9a-f:]{17})\b/i);
+        if (match) result.set(match[1], match[2].toLowerCase());
+      }
+    }
+  } catch {}
+
+  return result;
+}
+
+async function getNetbiosIdentity(ip: string) {
+  if (process.platform !== "win32") return { hostname: "", username: "" };
+
+  try {
+    const { stdout } = await execFileAsync("nbtstat", ["-A", ip], {
+      windowsHide: true,
+      timeout: 1800
+    });
+
+    let hostname = "";
+    let username = "";
+
+    for (const line of String(stdout || "").split(/\r?\n/)) {
+      const match = line.trim().match(/^(\S+)\s+<([0-9a-f]{2})>\s+(UNIQUE|GROUP)\b/i);
+      if (!match) continue;
+
+      const name = match[1].trim();
+      const suffix = match[2].toLowerCase();
+      const kind = match[3].toUpperCase();
+
+      if (!hostname && suffix === "00" && kind === "UNIQUE") hostname = name;
+      if (!username && suffix === "03" && kind === "UNIQUE") username = name;
+    }
+
+    return { hostname, username };
+  } catch {
+    return { hostname: "", username: "" };
+  }
+}
+
+async function enrichIdentities(
+  hosts: Array<{ ip: string; latencyMs: number | null; hostname: string }>,
+  arp: Map<string, string>
+) {
+  const enriched: Array<{
+    ip: string;
+    latencyMs: number;
+    hostname: string;
+    username: string;
+    mac: string;
+  }> = [];
+
+  for (let index = 0; index < hosts.length; index += 16) {
+    const batch = hosts.slice(index, index + 16);
+    const batchResults = await Promise.all(
+      batch.map(async (host) => {
+        const netbios = await getNetbiosIdentity(host.ip);
+        const hostname = host.hostname || netbios.hostname;
+        return {
+          ip: host.ip,
+          latencyMs: Math.round(host.latencyMs as number),
+          hostname,
+          username: netbios.username,
+          mac: arp.get(host.ip) || ""
+        };
+      })
+    );
+
+    enriched.push(...batchResults);
+  }
+
+  return enriched;
+}
+
 async function persistRunResult(
   runId: number,
   status: "success" | "error",
@@ -131,6 +226,7 @@ export async function scanServerNetworks() {
     const ranges = Array.from(new Set([...detected, ...envConfigured, ...persistedConfigured]));
     const configured = new Set([...envConfigured, ...persistedConfigured]);
     const now = new Date().toISOString();
+    const arp = await getArpTable();
 
     for (const subnet of ranges) {
       const source = configured.has(subnet) ? "configured" : "server-route";
@@ -153,7 +249,6 @@ export async function scanServerNetworks() {
       }
 
       const ips: string[] = [];
-
       for (let value = bounds.network + 1; value < bounds.broadcast; value += 1) {
         ips.push(intToIpv4(value));
       }
@@ -168,28 +263,32 @@ export async function scanServerNetworks() {
         );
 
         const reachable = results.filter((result) => result.latencyMs != null);
+        if (!reachable.length) continue;
 
-        const enriched = await Promise.all(
+        const withDns = await Promise.all(
           reachable.map(async (result) => ({
             ...result,
             hostname: await reverseDns(result.ip)
           }))
         );
 
+        const enriched = await enrichIdentities(withDns, arp);
+
         for (const result of enriched) {
           await run(
-            "INSERT INTO network_hosts(agent_id,ip,hostname,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,subnet=excluded.subnet,method='icmp',latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
+            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method='icmp',latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
             [
               "__server__",
               result.ip,
               result.hostname,
-              "",
+              result.username,
+              result.mac,
               "server",
               subnet,
               "icmp",
               "unknown",
               "[]",
-              Math.round(result.latencyMs),
+              result.latencyMs,
               1,
               now,
               now,
@@ -202,13 +301,7 @@ export async function scanServerNetworks() {
       }
     }
 
-    await persistRunResult(
-      runId,
-      "success",
-      ranges.length,
-      discoveredHosts,
-      skippedRanges
-    );
+    await persistRunResult(runId, "success", ranges.length, discoveredHosts, skippedRanges);
 
     return {
       scannedRanges: ranges.length,
@@ -221,6 +314,7 @@ export async function scanServerNetworks() {
     if (runId !== null) {
       await persistRunResult(runId, "error", 0, 0, 0, error).catch(() => {});
     }
+
     console.error("server network discovery failed", error);
     throw error;
   } finally {
