@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { all, initDb, run } from "./db";
+import { initDb, run } from "./db";
 import { configuredNetworkRanges } from "./network-ranges";
 import { detectServerIpv4Ranges } from "./server-network";
 
