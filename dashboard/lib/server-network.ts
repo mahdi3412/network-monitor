@@ -36,7 +36,7 @@ export async function detectServerIpv4Ranges(): Promise<string[]> {
     for (const iface of item || []) {
       if (iface.family === "IPv4" && !iface.internal && iface.address && iface.netmask) {
         const prefix = maskToPrefix(iface.netmask);
-        if (prefix != null && prefix < 31) {
+        if (prefix != null && prefix >= 16 && prefix < 31) {
           const subnet = normalize(iface.address, prefix);
           if (subnet) values.add(subnet);
         }
