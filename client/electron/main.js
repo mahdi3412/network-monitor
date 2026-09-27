@@ -112,7 +112,7 @@ function getRouteRanges() {
       if (error) return resolve([]);
       const rows = [];
       for (const line of String(stdout || "").split(/\r?\n/)) {
-        const m = line.trim().match(/^(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)\\s+\\d+$/);
+        const m = line.trim().match(/^(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)\s+\d+$/);
         if (!m || m[1] === "0.0.0.0") continue;
         const maskInt = ipv4ToInt(m[2]);
         const network = (ipv4ToInt(m[1]) & maskInt) >>> 0;
@@ -126,9 +126,9 @@ function getRouteRanges() {
 }
 function configuredRanges() {
   const raw=String(getConfig().scanRanges||"");
-  return raw.split(/[\\s,;]+/).map(x=>x.trim()).filter(Boolean).map(cidr=>{
+  return raw.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean).map(cidr=>{
     const parts=cidr.split("/");
-    if(parts.length!==2||!/^\\d+$/.test(parts[1])) return null;
+    if(parts.length!==2||!/^\d+$/.test(parts[1])) return null;
     const prefix=Math.max(0,Math.min(32,Number(parts[1])));
     const mask=prefix===0?0:(0xffffffff << (32-prefix))>>>0;
     const ipInt=ipv4ToInt(parts[0]);
@@ -170,7 +170,7 @@ async function scanNetwork(){
         if(r.hostname)continue;
         try{
           const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
-          const m=String(out).match(/<00>\\s+UNIQUE\\s+([A-Za-z0-9._-]+)/i);
+          const m=String(out).match(/<00>\s+UNIQUE\s+([A-Za-z0-9._-]+)/i);
           if(m)r.hostname=m[1];
         }catch{}
       }
