@@ -18,10 +18,11 @@ export async function GET() {
   `);
   const now = Date.now();
   return NextResponse.json(rows.map((h) => {
-    const age = now - new Date(h.last_seen || h.scanned_at).getTime();
+    const timestamp = new Date(h.last_seen || h.scanned_at).getTime();
+    const age = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : Number.POSITIVE_INFINITY;
     return {
       ...h,
-      status: age <= 10 * 60 * 1000 ? "online" : age <= 30 * 60 * 1000 ? "recent" : "offline"
+      status: h.reachable && age <= 10 * 60 * 1000 ? "online" : age <= 30 * 60 * 1000 ? "recent" : "offline"
     };
   }));
 }
