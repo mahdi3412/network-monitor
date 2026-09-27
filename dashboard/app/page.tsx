@@ -44,7 +44,16 @@ type NetworkHost = {
   status: "online" | "recent" | "offline";
 };
 
-function faDate(value?: string) {
+type NetworkRange = {
+  subnet: string;
+  source: string;
+  first_seen: string | null;
+  last_seen: string | null;
+  host_count: number;
+  online_hosts: number;
+};
+
+function faDate(value?: string | null) {
   return value ? new Date(value).toLocaleString("fa-IR") : "-";
 }
 
@@ -55,6 +64,11 @@ function statusLabel(status: string) {
 export default function Home() {
   const [clients, setClients] = useState<Client[]>([]);
   const [hosts, setHosts] = useState<NetworkHost[]>([]);
+  const [ranges, setRanges] = useState<NetworkRange[]>([]);
+  const [configuredRangesText, setConfiguredRangesText] = useState("");
+  const [rangeMessage, setRangeMessage] = useState("");
+  const [savingRanges, setSavingRanges] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [query, setQuery] = useState("");
   const [subnet, setSubnet] = useState("all");
   const [method, setMethod] = useState("all");
@@ -67,12 +81,17 @@ export default function Home() {
   const load = async () => {
     setLoading(true);
     try {
-      const [clientsResponse, hostsResponse] = await Promise.all([
+      const [clientsResponse, hostsResponse, rangesResponse, scanResponse] = await Promise.all([
         fetch("/api/clients", { cache: "no-store" }),
-        fetch("/api/network-hosts", { cache: "no-store" })
+        fetch("/api/network-hosts", { cache: "no-store" }),
+        fetch("/api/network-ranges", { cache: "no-store" }),
+        fetch("/api/network-scan", { cache: "no-store" })
       ]);
+
       if (clientsResponse.ok) setClients(await clientsResponse.json());
       if (hostsResponse.ok) setHosts(await hostsResponse.json());
+      if (rangesResponse.ok) setRanges(await rangesResponse.json());
+      if (scanResponse.ok) setScanning(Boolean((await scanResponse.json()).scanning));
     } finally {
       setLoading(false);
     }
@@ -80,6 +99,14 @@ export default function Home() {
 
   useEffect(() => {
     load();
+
+    fetch("/api/network-ranges?config=1", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data?.ranges) setConfiguredRangesText(data.ranges.join("\n"));
+      })
+      .catch(() => {});
+
     const timer = setInterval(load, 10000);
     return () => clearInterval(timer);
   }, []);
@@ -95,8 +122,11 @@ export default function Home() {
   }, [clients, query]);
 
   const subnets = useMemo(
-    () => Array.from(new Set(hosts.map((h) => h.subnet).filter(Boolean))).sort(),
-    [hosts]
+    () => Array.from(new Set([
+      ...ranges.map((r) => r.subnet),
+      ...hosts.map((h) => h.subnet).filter(Boolean)
+    ])).sort(),
+    [ranges, hosts]
   );
 
   const filteredHosts = useMemo(() => {
@@ -105,6 +135,7 @@ export default function Home() {
       const text = [h.ip, h.hostname, h.mac, h.adapter, h.subnet, h.agent_hostname, h.agent_ip]
         .join(" ")
         .toLowerCase();
+
       return (
         text.includes(q) &&
         (subnet === "all" || h.subnet === subnet) &&
@@ -115,11 +146,56 @@ export default function Home() {
     });
   }, [hosts, query, subnet, method, status, deviceType]);
 
-  const onlineClients = clients.filter((c) => c.status === "online").length;
-  const recentClients = clients.filter((c) => c.status === "recent").length;
   const onlineHosts = hosts.filter((h) => h.status === "online").length;
   const recentHosts = hosts.filter((h) => h.status === "recent").length;
-  const deviceTypeCounts = useMemo(() => hosts.reduce<Record<string, number>>((acc, h) => { const t = h.device_type || "unknown"; acc[t] = (acc[t] || 0) + 1; return acc; }, {}), [hosts]);
+  const deviceTypeCounts = useMemo(
+    () => hosts.reduce<Record<string, number>>((acc, h) => {
+      const t = h.device_type || "unknown";
+      acc[t] = (acc[t] || 0) + 1;
+      return acc;
+    }, {}),
+    [hosts]
+  );
+
+  const configuredRangeCount = ranges.filter((r) => r.source === "configured").length;
+
+  async function saveRanges() {
+    setSavingRanges(true);
+    setRangeMessage("");
+
+    try {
+      const response = await fetch("/api/network-ranges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ranges: configuredRangesText })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        setRangeMessage(data?.invalid?.length ? `رنج نامعتبر: ${data.invalid.join(", ")}` : (data?.error || "ذخیره رنج‌ها ناموفق بود."));
+        return;
+      }
+
+      setConfiguredRangesText((data.ranges || []).join("\n"));
+      setRangeMessage("رنج‌ها ذخیره شدند؛ اسکن شبکه شروع شد.");
+
+      setScanning(true);
+      const scanResponse = await fetch("/api/network-scan", {
+        method: "POST",
+        cache: "no-store"
+      });
+
+      if (scanResponse.ok) {
+        await load();
+      } else {
+        setRangeMessage("رنج‌ها ذخیره شدند، ولی شروع اسکن با خطا مواجه شد.");
+      }
+    } catch {
+      setRangeMessage("ارتباط با سرور برای ذخیره رنج‌ها برقرار نشد.");
+    } finally {
+      setSavingRanges(false);
+    }
+  }
 
   async function openDetail(id: string) {
     const response = await fetch("/api/clients/" + encodeURIComponent(id), { cache: "no-store" });
@@ -152,7 +228,7 @@ export default function Home() {
           <div className="stat">{onlineHosts}</div>
         </div>
         <div className="card">
-          <span className="muted">رنج‌های کشف‌شده</span>
+          <span className="muted">رنج‌های شبکه</span>
           <div className="stat">{subnets.length}</div>
         </div>
         <div className="card">
@@ -236,6 +312,68 @@ export default function Home() {
           </div>
         ) : (
           <>
+            <div className="range-settings">
+              <div>
+                <h3>رنج‌های IP برای اسکن سرور</h3>
+                <p className="muted">
+                  هر رنج را در یک خط وارد کن، مثال: 192.168.103.0/24
+                </p>
+              </div>
+
+              <textarea
+                className="range-textarea"
+                value={configuredRangesText}
+                onChange={(e) => setConfiguredRangesText(e.target.value)}
+                placeholder={"192.168.103.0/24\n192.168.104.0/24\n10.10.20.0/24"}
+                rows={6}
+                dir="ltr"
+              />
+
+              <div className="range-actions">
+                <button className="refresh" onClick={saveRanges} disabled={savingRanges}>
+                  {savingRanges ? "در حال ذخیره و اسکن..." : "ذخیره رنج‌ها و شروع اسکن"}
+                </button>
+                <span className="muted">
+                  {configuredRangeCount} رنج تنظیم‌شده · {scanning ? "اسکن در حال انجام است" : "اسکن متوقف است"}
+                </span>
+              </div>
+
+              {rangeMessage && <p className="range-message">{rangeMessage}</p>}
+            </div>
+
+            <div className="range-health">
+              <div className="inventory-summary">
+                <span>{ranges.length} رنج شناخته‌شده</span>
+                <span>{configuredRangeCount} رنج دستی</span>
+                <span>{ranges.filter((r) => r.online_hosts > 0).length} رنج دارای میزبان فعال</span>
+              </div>
+
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>رنج</th>
+                      <th>منبع</th>
+                      <th>کل میزبان‌های دیده‌شده</th>
+                      <th>فعال</th>
+                      <th>آخرین مشاهده</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {ranges.map((r) => (
+                      <tr key={r.subnet}>
+                        <td>{r.subnet}</td>
+                        <td>{r.source === "configured" ? "تنظیم دستی" : r.source === "server-route" ? "Route سرور" : "مشاهده‌شده"}</td>
+                        <td>{r.host_count}</td>
+                        <td>{r.online_hosts}</td>
+                        <td>{faDate(r.last_seen)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="filters">
               <select value={subnet} onChange={(e) => setSubnet(e.target.value)}>
                 <option value="all">همه رنج‌ها</option>
@@ -258,6 +396,7 @@ export default function Home() {
                 <option value="recent">اخیراً دیده‌شده</option>
                 <option value="offline">قدیمی</option>
               </select>
+
               <select value={deviceType} onChange={(e) => setDeviceType(e.target.value)}>
                 <option value="all">همه نوع دستگاه‌ها</option>
                 <option value="windows">Windows</option>
