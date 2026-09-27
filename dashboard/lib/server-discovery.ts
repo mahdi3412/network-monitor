@@ -64,11 +64,28 @@ async function reverseDns(ip: string) {
 }
 
 export async function scanServerNetworks() {
-  if (scanning) return { scannedRanges: 0, discoveredHosts: 0, skippedRanges: 0 };
+  if (scanning) return { scannedRanges: 0, discoveredHosts: 0, skippedRanges: 0, runId: null };
   scanning = true;
+
+  const startedAt = new Date().toISOString();
+  let runId: number | null = null;
 
   try {
     await initDb();
+    const insertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
+      const sqlite = require("sqlite3");
+      const probe = new sqlite.Database(require("path").join(process.cwd(), "data", "network-monitor.db"));
+      probe.run(
+        "INSERT INTO network_scan_runs(started_at,status) VALUES(?,?)",
+        [startedAt, "running"],
+        function (error: Error | null) {
+          probe.close();
+          if (error) reject(error);
+          else resolve({ lastID: this.lastID });
+        }
+      );
+    });
+    runId = insertResult.lastID;
 
     const detected = await detectServerIpv4Ranges();
     const configured = configuredNetworkRanges().map((range) => range.subnet);
@@ -120,7 +137,21 @@ export async function scanServerNetworks() {
       }
     }
 
-    return { scannedRanges: ranges.length, discoveredHosts, skippedRanges };
+    const finishedAt = new Date().toISOString();
+    await run(
+      "UPDATE network_scan_runs SET finished_at=?,status=?,scanned_ranges=?,discovered_hosts=?,skipped_ranges=? WHERE id=?",
+      [finishedAt, "success", ranges.length, discoveredHosts, skippedRanges, runId]
+    );
+
+    return { scannedRanges: ranges.length, discoveredHosts, skippedRanges, runId };
+  } catch (error) {
+    if (runId !== null) {
+      await run(
+        "UPDATE network_scan_runs SET finished_at=?,status=?,error=? WHERE id=?",
+        [new Date().toISOString(), "error", error instanceof Error ? error.message : String(error), runId]
+      ).catch(() => {});
+    }
+    throw error;
   } finally {
     scanning = false;
   }
