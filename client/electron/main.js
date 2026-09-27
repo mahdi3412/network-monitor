@@ -146,7 +146,7 @@ async function scanNetwork(){
     }
     for(const a of arp){
       if(!results.has(a.ip)){
-        const target=interfaces.find(x=>subnetRange(x.address,x.netmask).network===subnetRange(a.interfaceIp||"0.0.0.0","255.255.255.255").network);
+        const target=interfaces.find(x=>{const r=subnetRange(x.address,x.netmask),n=ipv4ToInt(a.ip);return n>r.network&&n<r.broadcast;});
         if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.name,subnet:target.address+"/"+target.netmask});
       }else if(a.mac)results.get(a.ip).mac=a.mac;
     }
