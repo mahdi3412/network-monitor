@@ -36,6 +36,7 @@ export function getAdConfig() {
   const url = String(process.env.AD_URL || "").trim();
   const baseDn = String(process.env.AD_BASE_DN || "").trim();
   const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "employeeID").trim();
+  const authMode = String(process.env.AD_AUTH_MODE || (process.env.AD_BIND_USER ? "credentials" : "integrated")).trim().toLowerCase();
   const username = String(process.env.AD_BIND_USER || "").trim();
 
   let server = "";
@@ -58,8 +59,9 @@ export function getAdConfig() {
     baseDn,
     personnelAttribute,
     username,
+    authMode,
     hasPassword: Boolean(process.env.AD_BIND_PASSWORD),
-    ready: enabled && Boolean(server && baseDn && username && process.env.AD_BIND_PASSWORD)
+    ready: enabled && Boolean(server && baseDn) && (authMode === "integrated" || Boolean(username && process.env.AD_BIND_PASSWORD))
   };
 }
 
@@ -183,6 +185,7 @@ if ($operation -eq "user") {
     NETWORK_MONITOR_AD_BASE_DN: config.baseDn,
     NETWORK_MONITOR_AD_USER: config.username,
     NETWORK_MONITOR_AD_PASSWORD: process.env.AD_BIND_PASSWORD || "",
+    NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
     NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0",
     NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute,
     NETWORK_MONITOR_AD_VALUE: value,
