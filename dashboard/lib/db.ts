@@ -1,0 +1,5 @@
+import sqlite3 from "sqlite3";import path from "path";import fs from "fs";
+const dataDir=path.join(process.cwd(),"data");fs.mkdirSync(dataDir,{recursive:true});const db=new sqlite3.Database(path.join(dataDir,"network-monitor.db"));let initialized=false;
+export function initDb():Promise<void>{if(initialized)return Promise.resolve();return new Promise((resolve,reject)=>db.run('CREATE TABLE IF NOT EXISTS clients (id INTEGER PRIMARY KEY AUTOINCREMENT,agent_id TEXT UNIQUE NOT NULL,ip TEXT,mac TEXT,hostname TEXT,username TEXT,first_name TEXT,last_name TEXT,personnel_id TEXT,os TEXT,os_version TEXT,cpu TEXT,ram_mb INTEGER,gateway TEXT,dns TEXT,adapter TEXT,agent_version TEXT,last_seen TEXT NOT NULL,created_at TEXT NOT NULL)',e=>{if(e)reject(e);else{initialized=true;resolve()}}))}
+export function all<T=any>(sql:string,params:any[]=[]):Promise<T[]>{return new Promise((resolve,reject)=>db.all(sql,params,(e,r)=>e?reject(e):resolve(r as T[])))}
+export function run(sql:string,params:any[]=[]):Promise<void>{return new Promise((resolve,reject)=>db.run(sql,params,e=>e?reject(e):resolve()))}
