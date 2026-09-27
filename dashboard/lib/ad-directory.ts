@@ -108,10 +108,10 @@ if ($ssl) {
   # ADSI uses the LDAP provider name even when the transport is LDAPS/SSL.
   # The SSL behavior is selected with AuthenticationTypes.SecureSocketsLayer.
   $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer
+  $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer -bor [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
 } else {
   $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure
+  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
 }
 
 if ($authMode -eq "integrated") {
