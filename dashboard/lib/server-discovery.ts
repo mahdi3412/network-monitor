@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { initDb, run } from "./db";
+import { initDb, run, runWithId } from "./db";
 import { configuredNetworkRanges } from "./network-ranges";
 import { detectServerIpv4Ranges } from "./server-network";
 
@@ -72,30 +72,10 @@ export async function scanServerNetworks() {
 
   try {
     await initDb();
-    const insertResult = await new Promise<{ lastID: number }>((resolve, reject) => {
-      const sqlite = require("sqlite3");
-      const probe = new sqlite.Database(require("path").join(process.cwd(), "data", "network-monitor.db"));
-      probe.run(
-        "INSERT INTO network_scan_runs(started_at,status) VALUES(?,?)",
-        [startedAt, "running"],
-        function (error: Error | null) {
-          probe.close();
-          if (error) reject(error);
-          else resolve({ lastID: this.lastID });
-        }
-      );
-    });
-    runId = insertResult.lastID;
-
-    const detected = await detectServerIpv4Ranges();
-    const configured = configuredNetworkRanges().map((range) => range.subnet);
-    const ranges = Array.from(new Set([...detected, ...configured]));
-    const now = new Date().toISOString();
-
-    for (const subnet of ranges) {
-      const source = configured.includes(subnet) ? "configured" : "server-route";
-      await run(
-        "INSERT INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) VALUES(?,?,?,?,?) ON CONFLICT(agent_id,subnet) DO UPDATE SET source=excluded.source,last_seen=excluded.last_seen",
+    runId = await runWithId(
+      "INSERT INTO network_scan_runs(started_at,status) VALUES(?,?)",
+      [startedAt, "running"]
+    );uded.source,last_seen=excluded.last_seen",
         ["__server__", subnet, source, now, now]
       );
     }
