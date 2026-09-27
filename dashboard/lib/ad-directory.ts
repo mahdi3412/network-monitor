@@ -108,7 +108,11 @@ if ($ssl) {
   $auth = [System.DirectoryServices.AuthenticationTypes]::Secure
 }
 
-$entry = New-Object System.DirectoryServices.DirectoryEntry($path, $bindUser, $bindPassword, $auth)
+if ($authMode -eq "integrated") {
+  $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList $path,$null,$null,$auth
+} else {
+  $entry = New-Object -TypeName System.DirectoryServices.DirectoryEntry -ArgumentList $path,$bindUser,$bindPassword,$auth
+}
 $searcher = New-Object System.DirectoryServices.DirectorySearcher($entry)
 $searcher.PageSize = 1000
 $searcher.ClientTimeout = New-TimeSpan -Seconds 8
