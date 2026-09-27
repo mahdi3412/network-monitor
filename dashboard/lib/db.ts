@@ -113,5 +113,6 @@ export async function initDb(): Promise<void> {
   }
 
   await Promise.all(additions);
+  await run("UPDATE network_hosts SET first_seen=COALESCE(first_seen, scanned_at), last_seen=COALESCE(last_seen, scanned_at)");
   initialized = true;
 }
