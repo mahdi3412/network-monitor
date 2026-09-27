@@ -62,6 +62,17 @@ export async function initDb(): Promise<void> {
     latency_ms INTEGER
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS network_scan_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL,
+    scanned_ranges INTEGER NOT NULL DEFAULT 0,
+    discovered_hosts INTEGER NOT NULL DEFAULT 0,
+    skipped_ranges INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+  `);
+
   await run(`CREATE TABLE IF NOT EXISTS network_ranges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id TEXT NOT NULL,
@@ -134,6 +145,7 @@ export async function initDb(): Promise<void> {
   await Promise.all(additions);
   await run("UPDATE network_hosts SET first_seen=COALESCE(first_seen, scanned_at), last_seen=COALESCE(last_seen, scanned_at)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_hosts_last_seen ON network_hosts(last_seen)");
+  await run("CREATE INDEX IF NOT EXISTS idx_network_scan_runs_started_at ON network_scan_runs(started_at)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_hosts_subnet_last_seen ON network_hosts(subnet,last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_ranges_last_seen ON network_ranges(last_seen)");
   await run("INSERT OR IGNORE INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) SELECT agent_id,subnet,'observed',MIN(first_seen),MAX(last_seen) FROM network_hosts WHERE subnet<>'' GROUP BY agent_id,subnet");
