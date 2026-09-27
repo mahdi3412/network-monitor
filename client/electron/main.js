@@ -56,32 +56,109 @@ function getAgentId() {
     return id;
   }
 }
-function collect() {
+function getNetworkInterfaces() {
   const nets = os.networkInterfaces();
-  let ip = "", mac = "", adapter = "";
+  const result = [];
   for (const [name, items] of Object.entries(nets)) {
     for (const n of items || []) {
-      if (!n.internal && n.family === "IPv4") {
-        ip = n.address; mac = n.mac || ""; adapter = name; break;
+      if (!n.internal && n.family === "IPv4" && n.address && n.netmask) {
+        result.push({ ...n, name });
       }
     }
-    if (ip) break;
   }
+  return result;
+}
+function getGateway() {
+  return new Promise(resolve => {
+    if (process.platform !== "win32") return resolve("");
+    execFile("route", ["print", "-4"], { windowsHide: true, timeout: 2000 }, (error, stdout) => {
+      if (error) return resolve("");
+      const lines = String(stdout || "").split(/\r?\n/);
+      for (const line of lines) {
+        const m = line.trim().match(/^0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+/);
+        if (m) return resolve(m[1]);
+      }
+      resolve("");
+    });
+  });
+}
+function getDnsServers() {
+  try { return dns.getServers().join(", "); } catch { return ""; }
+}
+function collect() {
+  const nets = getNetworkInterfaces();
+  const primary = nets[0] || {};
   const c = getConfig();
   return {
-    agentId: getAgentId(), ip, mac, adapter,
+    agentId: getAgentId(), ip: primary.address || "", mac: primary.mac || "", adapter: primary.name || "",
     hostname: os.hostname(), username: os.userInfo().username,
     firstName: c.firstName, lastName: c.lastName, personnelId: c.personnelId,
     os: process.platform, osVersion: os.release(),
     cpu: os.cpus()[0]?.model || "", ramMb: Math.round(os.totalmem() / 1024 / 1024),
-    gateway: "", dns: "", agentVersion: c.agentVersion
+    gateway: "", dns: getDnsServers(), agentVersion: c.agentVersion
   };
 }
 function ipv4ToInt(ip){return ip.split(".").reduce((n,o)=>(n<<8)+Number(o),0)>>>0}
 function intToIpv4(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join(".")}
 function subnetRange(ip,mask){const i=ipv4ToInt(ip),m=ipv4ToInt(mask),network=(i&m)>>>0,broadcast=(network|(~m>>>0))>>>0;return{network,broadcast}}
-function pingHost(ip){return new Promise(resolve=>{const win=process.platform==="win32";const args=win?["-n","1","-w","450",ip]:["-c","1","-W","1",ip];const started=Date.now();execFile("ping",args,{windowsHide:true,timeout:1500},async error=>{if(error)return resolve({ip,hostname:"",latencyMs:null,reachable:false});let hostname="";try{const names=await dns.reverse(ip);hostname=names[0]||""}catch{}resolve({ip,hostname,latencyMs:Date.now()-started,reachable:true})})})}
-async function scanNetwork(){if(runtime.scanning)return networkHosts;runtime.scanning=true;runtime.scanError="";publish();try{const nets=os.networkInterfaces();let target=null;for(const items of Object.values(nets)){for(const n of items||[]){if(!n.internal&&n.family==="IPv4"&&n.address&&n.netmask){target=n;break}}if(target)break}if(!target)throw new Error("رابط IPv4 فعال پیدا نشد");const {network,broadcast}=subnetRange(target.address,target.netmask);const total=broadcast-network-1;if(total<1)throw new Error("محدوده شبکه معتبر نیست");if(total>1024)throw new Error("شبکه بزرگ‌تر از 1024 میزبان است؛ برای جلوگیری از فشار، اسکن متوقف شد.");const ips=[];for(let n=network+1;n<broadcast;n++)ips.push(intToIpv4(n));const results=[];for(let i=0;i<ips.length;i+=32){const batch=await Promise.all(ips.slice(i,i+32).map(pingHost));results.push(...batch)}networkHosts=results.filter(x=>x.reachable);runtime.lastScan=new Date().toISOString()}catch(e){runtime.scanError=e?.message||"خطای اسکن"}finally{runtime.scanning=false;publish()}return networkHosts}
+function pingHost(ip){return new Promise(resolve=>{const win=process.platform==="win32";const args=win?["-n","1","-w","450",ip]:["-c","1","-W","1",ip];const started=Date.now();execFile("ping",args,{windowsHide:true,timeout:1500},async error=>{if(error)return resolve({ip,hostname:"",latencyMs:null,reachable:false,method:"icmp"});let hostname="";try{const names=await dns.reverse(ip);hostname=names[0]||""}catch{}resolve({ip,hostname,latencyMs:Date.now()-started,reachable:true,method:"icmp"})})})}
+function getArpTable() {
+  return new Promise(resolve => {
+    if (process.platform !== "win32") return resolve([]);
+    execFile("arp", ["-a"], { windowsHide: true, timeout: 3000 }, (error, stdout) => {
+      if (error) return resolve([]);
+      const rows = [];
+      let iface = "";
+      for (const line of String(stdout || "").split(/\r?\n/)) {
+        const im = line.match(/Interface:\s+(\d+\.\d+\.\d+\.\d+)/i);
+        if (im) { iface = im[1]; continue; }
+        const m = line.trim().match(/^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f-]{17})\s+(dynamic|static)$/i);
+        if (m) rows.push({ ip:m[1], mac:m[2].replace(/-/g,":").toLowerCase(), interfaceIp:iface });
+      }
+      resolve(rows);
+    });
+  });
+}
+async function scanNetwork(){
+  if(runtime.scanning)return networkHosts;
+  runtime.scanning=true;runtime.scanError="";publish();
+  try{
+    const interfaces=getNetworkInterfaces();
+    if(!interfaces.length)throw new Error("رابط IPv4 فعال پیدا نشد");
+    const arp=await getArpTable();
+    const byIp=new Map(arp.map(x=>[x.ip,x]));
+    const results=new Map();
+    for(const target of interfaces){
+      const {network,broadcast}=subnetRange(target.address,target.netmask);
+      const total=broadcast-network-1;
+      if(total<1)continue;
+      if(total>1024){continue;}
+      const ips=[];for(let n=network+1;n<broadcast;n++)ips.push(intToIpv4(n));
+      for(let i=0;i<ips.length;i+=32){
+        const batch=await Promise.all(ips.slice(i,i+32).map(pingHost));
+        for(const r of batch){
+          if(r.reachable){
+            const a=byIp.get(r.ip);
+            results.set(r.ip,{...r,mac:a?.mac||"",adapter:target.name,subnet:target.address+"/"+target.netmask});
+          }
+        }
+      }
+    }
+    for(const a of arp){
+      if(!results.has(a.ip)){
+        const target=interfaces.find(x=>subnetRange(x.address,x.netmask).network===subnetRange(a.interfaceIp||"0.0.0.0","255.255.255.255").network);
+        if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.name,subnet:target.address+"/"+target.netmask});
+      }else if(a.mac)results.get(a.ip).mac=a.mac;
+    }
+    for(const r of results.values()){
+      if(!r.hostname)try{const names=await dns.reverse(r.ip);r.hostname=names[0]||""}catch{}
+    }
+    networkHosts=[...results.values()].sort((a,b)=>ipv4ToInt(a.ip)-ipv4ToInt(b.ip));
+    runtime.lastScan=new Date().toISOString();
+  }catch(e){runtime.scanError=e?.message||"خطای اسکن"}
+  finally{runtime.scanning=false;publish()}
+  return networkHosts
+}
 function publish() {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("agent-state", getState());
 }
