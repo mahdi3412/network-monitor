@@ -104,14 +104,18 @@ $attribute = $env:NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE
 $value = $env:NETWORK_MONITOR_AD_VALUE
 $operation = $env:NETWORK_MONITOR_AD_OPERATION
 
-if ($ssl) {
-  # ADSI uses the LDAP provider name even when the transport is LDAPS/SSL.
-  # The SSL behavior is selected with AuthenticationTypes.SecureSocketsLayer.
+# Integrated Windows authentication (Negotiate/Kerberos/NTLM) is performed over LDAP.
+# LDAPS with DirectoryEntry can require explicit credentials/certificate handling and is
+# not needed when the domain controller enforces LDAP signing.
+if ($authMode -eq "integrated") {
+  $path = "LDAP://" + $server + ":389/" + $baseDn
+  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
+} elseif ($ssl) {
   $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer -bor [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
+  $auth = [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer
 } else {
   $path = "LDAP://" + $server + ":" + $port + "/" + $baseDn
-  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::ServerBind
+  $auth = [System.DirectoryServices.AuthenticationTypes]::Secure
 }
 
 if ($authMode -eq "integrated") {
