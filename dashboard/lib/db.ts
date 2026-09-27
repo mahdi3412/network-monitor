@@ -80,7 +80,7 @@ export async function initDb(): Promise<void> {
     discovered_hosts INTEGER NOT NULL DEFAULT 0,
     skipped_ranges INTEGER NOT NULL DEFAULT 0,
     error TEXT
-  `);
+  )`);
 
   await run(`CREATE TABLE IF NOT EXISTS network_ranges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
