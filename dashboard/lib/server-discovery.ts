@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import net from "node:net";
 import { initDb, run, runWithId } from "./db";
 import {
   configuredNetworkRanges,
@@ -9,6 +10,15 @@ import { detectServerIpv4Ranges } from "./server-network";
 
 const execFileAsync = promisify(execFile);
 let scanning = false;
+
+const tcpPorts = [
+  { port: 445, name: "SMB" },
+  { port: 3389, name: "RDP" },
+  { port: 80, name: "HTTP" },
+  { port: 443, name: "HTTPS" },
+  { port: 22, name: "SSH" },
+  { port: 9100, name: "Printer" }
+];
 
 function ipv4ToInt(ip: string) {
   return ip.split(".").reduce((n, octet) => (n << 8) + Number(octet), 0) >>> 0;
@@ -22,27 +32,21 @@ function rangeToBounds(cidr: string) {
   const [ip, prefixText] = cidr.split("/");
   const prefix = Number(prefixText);
 
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip) || prefix < 1 || prefix > 30) {
-    return null;
-  }
+  if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip) || prefix < 1 || prefix > 30) return null;
 
   const mask = (0xffffffff << (32 - prefix)) >>> 0;
   const network = (ipv4ToInt(ip) & mask) >>> 0;
   const broadcast = (network | (~mask >>> 0)) >>> 0;
   const total = broadcast - network - 1;
 
-  if (total < 1 || total > 8192) {
-    return null;
-  }
-
+  if (total < 1 || total > 8192) return null;
   return { network, broadcast };
 }
 
 async function ping(ip: string) {
-  const args =
-    process.platform === "win32"
-      ? ["-n", "1", "-w", "500", ip]
-      : ["-c", "1", "-W", "1", ip];
+  const args = process.platform === "win32"
+    ? ["-n", "1", "-w", "500", ip]
+    : ["-c", "1", "-W", "1", ip];
 
   const started = Date.now();
 
@@ -51,11 +55,55 @@ async function ping(ip: string) {
       windowsHide: true,
       timeout: process.platform === "win32" ? 1700 : 1800
     });
-
     return Date.now() - started;
   } catch {
     return null;
   }
+}
+
+async function probePort(ip: string, port: number) {
+  return new Promise<boolean>((resolve) => {
+    const socket = new net.Socket();
+    let settled = false;
+
+    const finish = (open: boolean) => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(open);
+    };
+
+    socket.setTimeout(500);
+    socket.once("connect", () => finish(true));
+    socket.once("timeout", () => finish(false));
+    socket.once("error", () => finish(false));
+
+    try {
+      socket.connect(port, ip);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
+async function tcpProbe(ip: string) {
+  const open = await Promise.all(
+    tcpPorts.map(async ({ port, name }) => ({ name, open: await probePort(ip, port) }))
+  );
+
+  const services = open.filter((item) => item.open).map((item) => item.name);
+
+  return {
+    reachable: services.length > 0,
+    services,
+    deviceType: services.includes("Printer")
+      ? "printer"
+      : services.includes("SMB") || services.includes("RDP")
+        ? "windows"
+        : services.includes("SSH")
+          ? "linux-or-network"
+          : "unknown"
+  };
 }
 
 async function reverseDns(ip: string) {
@@ -91,16 +139,13 @@ async function getArpTable() {
       });
 
       for (const line of String(stdout || "").split(/\r?\n/)) {
-        const match = line.trim().match(/^(\d+\.\d+\.\d+\.\d+)\s+([0-9a-f]{2}[-:]){5}[0-9a-f]{2}\s+/i);
-        if (!match) continue;
-
         const parts = line.trim().split(/\s+/);
-        const mac = parts[1]?.replace(/-/g, ":").toLowerCase();
-        if (mac) result.set(parts[0], mac);
+        if (parts.length < 3 || !/^\d+\.\d+\.\d+\.\d+$/.test(parts[0])) continue;
+        if (!/^[0-9a-f]{2}([-:][0-9a-f]{2}){5}$/i.test(parts[1])) continue;
+        result.set(parts[0], parts[1].replace(/-/g, ":").toLowerCase());
       }
     } else {
       const { stdout } = await execFileAsync("ip", ["neigh"], { timeout: 3000 });
-
       for (const line of String(stdout || "").split(/\r?\n/)) {
         const match = line.match(/^(\d+\.\d+\.\d+\.\d+) .* lladdr ([0-9a-f:]{17})\b/i);
         if (match) result.set(match[1], match[2].toLowerCase());
@@ -141,30 +186,30 @@ async function getNetbiosIdentity(ip: string) {
   }
 }
 
-async function enrichIdentities(
-  hosts: Array<{ ip: string; latencyMs: number | null; hostname: string }>,
-  arp: Map<string, string>
-) {
-  const enriched: Array<{
-    ip: string;
-    latencyMs: number;
-    hostname: string;
-    username: string;
-    mac: string;
-  }> = [];
+async function enrichIdentities(hosts: Array<{
+  ip: string;
+  latencyMs: number | null;
+  hostname: string;
+  services: string[];
+  deviceType: string;
+  method: string;
+}>, arp: Map<string, string>) {
+  const enriched = [];
 
   for (let index = 0; index < hosts.length; index += 16) {
     const batch = hosts.slice(index, index + 16);
     const batchResults = await Promise.all(
       batch.map(async (host) => {
         const netbios = await getNetbiosIdentity(host.ip);
-        const hostname = host.hostname || netbios.hostname;
         return {
           ip: host.ip,
-          latencyMs: Math.round(host.latencyMs as number),
-          hostname,
+          latencyMs: host.latencyMs,
+          hostname: host.hostname || netbios.hostname,
           username: netbios.username,
-          mac: arp.get(host.ip) || ""
+          mac: arp.get(host.ip) || "",
+          services: host.services,
+          deviceType: host.deviceType === "unknown" && netbios.username ? "windows" : host.deviceType,
+          method: host.method
         };
       })
     );
@@ -253,20 +298,50 @@ export async function scanServerNetworks() {
         ips.push(intToIpv4(value));
       }
 
-      for (let index = 0; index < ips.length; index += 64) {
-        const batch = ips.slice(index, index + 64);
-        const results = await Promise.all(
-          batch.map(async (ip) => ({
-            ip,
-            latencyMs: await ping(ip)
-          }))
+      for (let index = 0; index < ips.length; index += 32) {
+        const batch = ips.slice(index, index + 32);
+        const pingResults = await Promise.all(
+          batch.map(async (ip) => ({ ip, latencyMs: await ping(ip) }))
         );
 
-        const reachable = results.filter((result) => result.latencyMs != null);
-        if (!reachable.length) continue;
+        const candidates: Array<{
+          ip: string;
+          latencyMs: number | null;
+          hostname: string;
+          services: string[];
+          deviceType: string;
+          method: string;
+        }> = pingResults
+          .filter((result) => result.latencyMs != null)
+          .map((result) => ({
+            ip: result.ip,
+            latencyMs: result.latencyMs,
+            hostname: "",
+            services: [],
+            deviceType: "unknown",
+            method: "icmp"
+          }));
+
+        const pingDown = batch.filter((ip) => !pingResults.some((result) => result.ip === ip && result.latencyMs != null));
+        const tcpResults = await Promise.all(
+          pingDown.map(async (ip) => ({ ip, ...await tcpProbe(ip) }))
+        );
+
+        for (const result of tcpResults.filter((item) => item.reachable)) {
+          candidates.push({
+            ip: result.ip,
+            latencyMs: null,
+            hostname: "",
+            services: result.services,
+            deviceType: result.deviceType,
+            method: "tcp"
+          });
+        }
+
+        if (!candidates.length) continue;
 
         const withDns = await Promise.all(
-          reachable.map(async (result) => ({
+          candidates.map(async (result) => ({
             ...result,
             hostname: await reverseDns(result.ip)
           }))
@@ -276,7 +351,7 @@ export async function scanServerNetworks() {
 
         for (const result of enriched) {
           await run(
-            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method='icmp',latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
+            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method=excluded.method,device_type=CASE WHEN excluded.device_type<>'unknown' THEN excluded.device_type ELSE network_hosts.device_type END,services=CASE WHEN excluded.services<>'[]' THEN excluded.services ELSE network_hosts.services END,latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
             [
               "__server__",
               result.ip,
@@ -285,9 +360,9 @@ export async function scanServerNetworks() {
               result.mac,
               "server",
               subnet,
-              "icmp",
-              "unknown",
-              "[]",
+              result.method,
+              result.deviceType,
+              JSON.stringify(result.services),
               result.latencyMs,
               1,
               now,
