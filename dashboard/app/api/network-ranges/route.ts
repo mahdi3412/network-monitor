@@ -62,7 +62,7 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json(Array.from(bySubnet.values()).sort((a, b) =>
+  return new NextResponse(JSON.stringify(Array.from(bySubnet.values()).sort((a, b) =>
     a.subnet.localeCompare(b.subnet, undefined, { numeric: true })
-  ));
+  )), { headers: { "Cache-Control": "no-store" } });
 }
