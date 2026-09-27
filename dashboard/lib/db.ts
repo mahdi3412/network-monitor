@@ -74,6 +74,8 @@ export async function initDb(): Promise<void> {
     latency_ms INTEGER,
     reachable INTEGER NOT NULL,
     scanned_at TEXT NOT NULL,
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
     UNIQUE(agent_id, ip)
   )`);
 
@@ -101,6 +103,13 @@ export async function initDb(): Promise<void> {
   }
   if (!networkHosts.some((column) => column.name === "method")) {
     additions.push(run("ALTER TABLE network_hosts ADD COLUMN method TEXT"));
+  }
+
+  if (!networkHosts.some((column) => column.name === "first_seen")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN first_seen TEXT"));
+  }
+  if (!networkHosts.some((column) => column.name === "last_seen")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN last_seen TEXT"));
   }
 
   await Promise.all(additions);
