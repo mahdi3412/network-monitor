@@ -1,7 +1,10 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { initDb, run, runWithId } from "./db";
-import { configuredNetworkRanges } from "./network-ranges";
+import {
+  configuredNetworkRanges,
+  persistedConfiguredNetworkRanges
+} from "./network-ranges";
 import { detectServerIpv4Ranges } from "./server-network";
 
 const execFileAsync = promisify(execFile);
@@ -123,12 +126,14 @@ export async function scanServerNetworks() {
     );
 
     const detected = await detectServerIpv4Ranges();
-    const configured = configuredNetworkRanges().map((range) => range.subnet);
-    const ranges = Array.from(new Set([...detected, ...configured]));
+    const envConfigured = configuredNetworkRanges().map((range) => range.subnet);
+    const persistedConfigured = (await persistedConfiguredNetworkRanges()).map((range) => range.subnet);
+    const ranges = Array.from(new Set([...detected, ...envConfigured, ...persistedConfigured]));
+    const configured = new Set([...envConfigured, ...persistedConfigured]);
     const now = new Date().toISOString();
 
     for (const subnet of ranges) {
-      const source = configured.includes(subnet) ? "configured" : "server-route";
+      const source = configured.has(subnet) ? "configured" : "server-route";
 
       await run(
         "INSERT INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) VALUES(?,?,?,?,?) ON CONFLICT(agent_id,subnet) DO UPDATE SET source=CASE WHEN network_ranges.source='configured' THEN 'configured' ELSE excluded.source END,last_seen=excluded.last_seen",
