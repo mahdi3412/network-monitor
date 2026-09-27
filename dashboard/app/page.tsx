@@ -59,6 +59,7 @@ export default function Home() {
   const [subnet, setSubnet] = useState("all");
   const [method, setMethod] = useState("all");
   const [status, setStatus] = useState("all");
+  const [deviceType, setDeviceType] = useState("all");
   const [tab, setTab] = useState<"clients" | "network">("clients");
   const [detail, setDetail] = useState<any>(null);
   const [loading, setLoading] = useState(false);
@@ -99,8 +100,7 @@ export default function Home() {
   );
 
   const filteredHosts = useMemo(() => {
-    const typeFilter = query.startsWith("__type:") ? query.slice(7) : "";
-    const q = typeFilter ? "" : query.toLowerCase();
+    const q = query.toLowerCase();
     return hosts.filter((h) => {
       const text = [h.ip, h.hostname, h.mac, h.adapter, h.subnet, h.agent_hostname, h.agent_ip]
         .join(" ")
@@ -110,10 +110,10 @@ export default function Home() {
         (subnet === "all" || h.subnet === subnet) &&
         (method === "all" || h.method === method) &&
         (status === "all" || h.status === status) &&
-        (!typeFilter || h.device_type === typeFilter)
+        (deviceType === "all" || h.device_type === deviceType)
       );
     });
-  }, [hosts, query, subnet, method, status]);
+  }, [hosts, query, subnet, method, status, deviceType]);
 
   const onlineClients = clients.filter((c) => c.status === "online").length;
   const recentClients = clients.filter((c) => c.status === "recent").length;
@@ -258,13 +258,17 @@ export default function Home() {
                 <option value="recent">اخیراً دیده‌شده</option>
                 <option value="offline">قدیمی</option>
               </select>
-            </div>
-
-            <div className="filters">
-              <select value={status} onChange={(e) => setStatus(e.target.value)}>
-                <option value="all">همه وضعیت‌ها</option><option value="online">فعال</option><option value="recent">اخیراً دیده‌شده</option><option value="offline">قدیمی</option>
+              <select value={deviceType} onChange={(e) => setDeviceType(e.target.value)}>
+                <option value="all">همه نوع دستگاه‌ها</option>
+                <option value="windows">Windows</option>
+                <option value="printer">Printer</option>
+                <option value="network-device">Network Device</option>
+                <option value="gateway">Gateway</option>
+                <option value="linux-or-network">Linux / Network</option>
+                <option value="unknown">Unknown</option>
               </select>
             </div>
+
             <div className="inventory-summary">
               <span>{filteredHosts.length} نتیجه</span>
               <span>{onlineHosts} فعال</span>
@@ -301,7 +305,7 @@ export default function Home() {
                       <td>{h.mac || "-"}</td>
                       <td>{h.subnet || "-"}</td>
                       <td>{h.device_type || "unknown"}</td>
-                      <td>{h.services ? JSON.parse(h.services).join(", ") : "-"}</td>
+                      <td>{(() => { try { return h.services ? JSON.parse(h.services).join(", ") : "-"; } catch { return "-"; } })()}</td>
                       <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
                       <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
                       <td>{h.agent_hostname || h.agent_ip || "-"}</td>
