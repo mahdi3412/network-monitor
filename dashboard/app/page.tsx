@@ -1,12 +1,387 @@
-"use client";import{useEffect,useMemo,useState}from"react";
-type Client={agent_id:string;ip:string;mac:string;hostname:string;username:string;first_name:string;last_name:string;personnel_id:string;os:string;os_version:string;cpu?:string;ram_mb?:number;gateway?:string;dns?:string;adapter?:string;agent_version?:string;last_seen:string;status:string};
-export default function Home(){const[clients,setClients]=useState<Client[]>([]),[q,setQ]=useState(""),[detail,setDetail]=useState<any>(null),[loading,setLoading]=useState(false);
-const load=async()=>{setLoading(true);try{const r=await fetch("/api/clients",{cache:"no-store"});if(r.ok)setClients(await r.json())}finally{setLoading(false)}};useEffect(()=>{load();const t=setInterval(load,10000);return()=>clearInterval(t)},[]);
-const filtered=useMemo(()=>clients.filter(c=>[c.ip,c.hostname,c.username,c.first_name,c.last_name,c.personnel_id,c.mac].join(" ").toLowerCase().includes(q.toLowerCase())),[clients,q]);const online=clients.filter(c=>c.status==="online").length,recent=clients.filter(c=>c.status==="recent").length;
-async function openDetail(id:string){const r=await fetch("/api/clients/"+encodeURIComponent(id),{cache:"no-store"});if(r.ok)setDetail(await r.json())}
-return <main className="shell"><div className="topbar"><div className="brand"><h1>Network Monitor</h1><p>داشبورد مانیتورینگ کلاینت‌ها</p></div><button className="refresh" onClick={load}>{loading?"در حال بروزرسانی...":"بروزرسانی"}</button></div>
-<section className="grid"><div className="card"><span className="muted">کل سیستم‌ها</span><div className="stat">{clients.length}</div></div><div className="card"><span className="muted">آنلاین</span><div className="stat">{online}</div></div><div className="card"><span className="muted">اخیراً دیده‌شده</span><div className="stat">{recent}</div></div><div className="card"><span className="muted">آفلاین</span><div className="stat">{clients.length-online-recent}</div></div></section>
-<section className="card"><div className="toolbar"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="جستجو: IP، نام کامپیوتر، پرسنلی، کاربر، MAC..." /></div><div className="table-wrap"><table className="table"><thead><tr><th>وضعیت</th><th>IP</th><th>کامپیوتر</th><th>کاربر</th><th>پرسنلی</th><th>سیستم‌عامل</th><th>آخرین اتصال</th></tr></thead><tbody>{filtered.map(c=><tr key={c.agent_id}><td><span className={"status "+c.status}>{c.status==="online"?"آنلاین":c.status==="recent"?"اخیراً دیده‌شده":"آفلاین"}</span></td><td>{c.ip||"-"}</td><td><button className="refresh" onClick={()=>openDetail(c.agent_id)}>{c.hostname}</button></td><td>{[c.first_name,c.last_name].filter(Boolean).join(" ")||c.username||"-"}</td><td>{c.personnel_id||"-"}</td><td>{c.os} {c.os_version}</td><td>{new Date(c.last_seen).toLocaleString("fa-IR")}</td></tr>)}{!filtered.length&&<tr><td colSpan={7} className="muted">هنوز کلاینتی ثبت نشده است.</td></tr>}</tbody></table></div></section>
-{detail&&<section className="card detail"><div className="detail-head"><div><h2>{detail.client.hostname}</h2><p className="muted">{detail.client.ip||"-"} · {detail.client.status}</p></div><button className="refresh" onClick={()=>setDetail(null)}>بستن</button></div>
-<div className="detail-grid"><div><b>کاربر</b><span>{detail.client.username||"-"}</span></div><div><b>پرسنلی</b><span>{detail.client.personnel_id||"-"}</span></div><div><b>MAC</b><span>{detail.client.mac||"-"}</span></div><div><b>Adapter</b><span>{detail.client.adapter||"-"}</span></div><div><b>Gateway</b><span>{detail.client.gateway||"-"}</span></div><div><b>DNS</b><span>{detail.client.dns||"-"}</span></div><div><b>CPU</b><span>{detail.client.cpu||"-"}</span></div><div><b>RAM</b><span>{detail.client.ram_mb?detail.client.ram_mb+" MB":"-"}</span></div><div><b>Agent</b><span>{detail.client.agent_version||"-"}</span></div></div>
-<h3>اعضای قابل مشاهده شبکه</h3><div className="table-wrap"><table className="table"><thead><tr><th>IP</th><th>MAC</th><th>نام میزبان</th><th>Interface</th><th>روش</th><th>Latency</th><th>آخرین اسکن</th></tr></thead><tbody>{(detail.networkHosts||[]).map((h:any)=><tr key={h.ip}><td>{h.ip}</td><td>{h.mac||"-"}</td><td>{h.hostname||"-"}</td><td>{h.adapter||"-"}</td><td>{h.method==="arp"?"ARP":"ICMP"}</td><td>{h.latency_ms!=null?h.latency_ms+" ms":"-"}</td><td>{new Date(h.scanned_at).toLocaleString("fa-IR")}</td></tr>)}</tbody></table></div><h3>آخرین Heartbeatها</h3><div className="table-wrap"><table className="table"><thead><tr><th>زمان</th><th>IP</th><th>Latency</th><th>کاربر</th></tr></thead><tbody>{detail.history.map((h:any)=><tr key={h.received_at}><td>{new Date(h.received_at).toLocaleString("fa-IR")}</td><td>{h.ip||"-"}</td><td>{h.latency_ms!=null?h.latency_ms+" ms":"-"}</td><td>{h.username||"-"}</td></tr>)}</tbody></table></div></section>}</main>}
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type Client = {
+  agent_id: string;
+  ip: string;
+  mac: string;
+  hostname: string;
+  username: string;
+  first_name: string;
+  last_name: string;
+  personnel_id: string;
+  os: string;
+  os_version: string;
+  cpu?: string;
+  ram_mb?: number;
+  gateway?: string;
+  dns?: string;
+  adapter?: string;
+  agent_version?: string;
+  last_seen: string;
+  status: string;
+};
+
+type NetworkHost = {
+  id: number;
+  agent_id: string;
+  ip: string;
+  hostname: string;
+  mac: string;
+  adapter: string;
+  subnet: string;
+  method: string;
+  latency_ms: number | null;
+  reachable: number;
+  scanned_at: string;
+  first_seen: string;
+  last_seen: string;
+  agent_hostname?: string;
+  agent_ip?: string;
+  status: "online" | "recent" | "offline";
+};
+
+function faDate(value?: string) {
+  return value ? new Date(value).toLocaleString("fa-IR") : "-";
+}
+
+function statusLabel(status: string) {
+  return status === "online" ? "آنلاین" : status === "recent" ? "اخیراً دیده‌شده" : "آفلاین";
+}
+
+export default function Home() {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [hosts, setHosts] = useState<NetworkHost[]>([]);
+  const [query, setQuery] = useState("");
+  const [subnet, setSubnet] = useState("all");
+  const [method, setMethod] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [tab, setTab] = useState<"clients" | "network">("clients");
+  const [detail, setDetail] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [clientsResponse, hostsResponse] = await Promise.all([
+        fetch("/api/clients", { cache: "no-store" }),
+        fetch("/api/network-hosts", { cache: "no-store" })
+      ]);
+      if (clientsResponse.ok) setClients(await clientsResponse.json());
+      if (hostsResponse.ok) setHosts(await hostsResponse.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const filteredClients = useMemo(() => {
+    const q = query.toLowerCase();
+    return clients.filter((c) =>
+      [c.ip, c.hostname, c.username, c.first_name, c.last_name, c.personnel_id, c.mac]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [clients, query]);
+
+  const subnets = useMemo(
+    () => Array.from(new Set(hosts.map((h) => h.subnet).filter(Boolean))).sort(),
+    [hosts]
+  );
+
+  const filteredHosts = useMemo(() => {
+    const q = query.toLowerCase();
+    return hosts.filter((h) => {
+      const text = [h.ip, h.hostname, h.mac, h.adapter, h.subnet, h.agent_hostname, h.agent_ip]
+        .join(" ")
+        .toLowerCase();
+      return (
+        text.includes(q) &&
+        (subnet === "all" || h.subnet === subnet) &&
+        (method === "all" || h.method === method) &&
+        (status === "all" || h.status === status)
+      );
+    });
+  }, [hosts, query, subnet, method, status]);
+
+  const onlineClients = clients.filter((c) => c.status === "online").length;
+  const recentClients = clients.filter((c) => c.status === "recent").length;
+  const onlineHosts = hosts.filter((h) => h.status === "online").length;
+  const recentHosts = hosts.filter((h) => h.status === "recent").length;
+
+  async function openDetail(id: string) {
+    const response = await fetch("/api/clients/" + encodeURIComponent(id), { cache: "no-store" });
+    if (response.ok) setDetail(await response.json());
+  }
+
+  return (
+    <main className="shell">
+      <div className="topbar">
+        <div className="brand">
+          <h1>Network Monitor</h1>
+          <p>مرکز مانیتورینگ کلاینت‌ها و اعضای شبکه</p>
+        </div>
+        <button className="refresh" onClick={load}>
+          {loading ? "در حال بروزرسانی..." : "بروزرسانی"}
+        </button>
+      </div>
+
+      <section className="grid">
+        <div className="card">
+          <span className="muted">کل کلاینت‌های Agent</span>
+          <div className="stat">{clients.length}</div>
+        </div>
+        <div className="card">
+          <span className="muted">کل اعضای کشف‌شده شبکه</span>
+          <div className="stat">{hosts.length}</div>
+        </div>
+        <div className="card">
+          <span className="muted">میزبان‌های فعال</span>
+          <div className="stat">{onlineHosts}</div>
+        </div>
+        <div className="card">
+          <span className="muted">رنج‌های کشف‌شده</span>
+          <div className="stat">{subnets.length}</div>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="toolbar">
+          <div className="tabs">
+            <button className={tab === "clients" ? "tab active" : "tab"} onClick={() => setTab("clients")}>
+              کلاینت‌ها
+            </button>
+            <button className={tab === "network" ? "tab active" : "tab"} onClick={() => setTab("network")}>
+              Network Inventory
+            </button>
+          </div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={
+              tab === "network"
+                ? "جستجو: IP، Hostname، MAC، Subnet..."
+                : "جستجو: IP، نام کامپیوتر، پرسنلی، کاربر، MAC..."
+            }
+          />
+        </div>
+
+        {tab === "clients" ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>وضعیت</th>
+                  <th>IP</th>
+                  <th>کامپیوتر</th>
+                  <th>کاربر</th>
+                  <th>پرسنلی</th>
+                  <th>سیستم‌عامل</th>
+                  <th>آخرین اتصال</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredClients.map((c) => (
+                  <tr key={c.agent_id}>
+                    <td>
+                      <span className={"status " + c.status}>{statusLabel(c.status)}</span>
+                    </td>
+                    <td>{c.ip || "-"}</td>
+                    <td>
+                      <button className="link-button" onClick={() => openDetail(c.agent_id)}>
+                        {c.hostname || "-"}
+                      </button>
+                    </td>
+                    <td>{[c.first_name, c.last_name].filter(Boolean).join(" ") || c.username || "-"}</td>
+                    <td>{c.personnel_id || "-"}</td>
+                    <td>
+                      {c.os} {c.os_version}
+                    </td>
+                    <td>{faDate(c.last_seen)}</td>
+                  </tr>
+                ))}
+                {!filteredClients.length && (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      هنوز کلاینتی ثبت نشده است.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <>
+            <div className="filters">
+              <select value={subnet} onChange={(e) => setSubnet(e.target.value)}>
+                <option value="all">همه رنج‌ها</option>
+                {subnets.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+
+              <select value={method} onChange={(e) => setMethod(e.target.value)}>
+                <option value="all">همه روش‌ها</option>
+                <option value="icmp">ICMP</option>
+                <option value="arp">ARP</option>
+              </select>
+
+              <select value={status} onChange={(e) => setStatus(e.target.value)}>
+                <option value="all">همه وضعیت‌ها</option>
+                <option value="online">فعال</option>
+                <option value="recent">اخیراً دیده‌شده</option>
+                <option value="offline">قدیمی</option>
+              </select>
+            </div>
+
+            <div className="inventory-summary">
+              <span>{filteredHosts.length} نتیجه</span>
+              <span>{onlineHosts} فعال</span>
+              <span>{recentHosts} اخیر</span>
+              <span>{hosts.filter((h) => h.status === "offline").length} قدیمی</span>
+            </div>
+
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>وضعیت</th>
+                    <th>IP</th>
+                    <th>Hostname</th>
+                    <th>MAC</th>
+                    <th>Subnet</th>
+                    <th>روش</th>
+                    <th>Latency</th>
+                    <th>Agent</th>
+                    <th>اولین مشاهده</th>
+                    <th>آخرین مشاهده</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredHosts.map((h) => (
+                    <tr key={h.agent_id + ":" + h.ip}>
+                      <td>
+                        <span className={"status " + h.status}>{statusLabel(h.status)}</span>
+                      </td>
+                      <td>{h.ip}</td>
+                      <td>{h.hostname || "-"}</td>
+                      <td>{h.mac || "-"}</td>
+                      <td>{h.subnet || "-"}</td>
+                      <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
+                      <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
+                      <td>{h.agent_hostname || h.agent_ip || "-"}</td>
+                      <td>{faDate(h.first_seen)}</td>
+                      <td>{faDate(h.last_seen)}</td>
+                    </tr>
+                  ))}
+                  {!filteredHosts.length && (
+                    <tr>
+                      <td colSpan={10} className="muted">
+                        در این فیلتر نتیجه‌ای پیدا نشد.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+
+      {detail && (
+        <section className="card detail">
+          <div className="detail-head">
+            <div>
+              <h2>{detail.client.hostname}</h2>
+              <p className="muted">
+                {detail.client.ip || "-"} · {detail.client.status}
+              </p>
+            </div>
+            <button className="refresh" onClick={() => setDetail(null)}>
+              بستن
+            </button>
+          </div>
+
+          <div className="detail-grid">
+            <div><b>کاربر</b><span>{detail.client.username || "-"}</span></div>
+            <div><b>پرسنلی</b><span>{detail.client.personnel_id || "-"}</span></div>
+            <div><b>MAC</b><span>{detail.client.mac || "-"}</span></div>
+            <div><b>Adapter</b><span>{detail.client.adapter || "-"}</span></div>
+            <div><b>Gateway</b><span>{detail.client.gateway || "-"}</span></div>
+            <div><b>DNS</b><span>{detail.client.dns || "-"}</span></div>
+            <div><b>CPU</b><span>{detail.client.cpu || "-"}</span></div>
+            <div><b>RAM</b><span>{detail.client.ram_mb ? detail.client.ram_mb + " MB" : "-"}</span></div>
+            <div><b>Agent</b><span>{detail.client.agent_version || "-"}</span></div>
+          </div>
+
+          <h3>اعضای قابل مشاهده شبکه</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>MAC</th>
+                  <th>نام میزبان</th>
+                  <th>Subnet</th>
+                  <th>Interface</th>
+                  <th>روش</th>
+                  <th>Latency</th>
+                  <th>اولین مشاهده</th>
+                  <th>آخرین مشاهده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(detail.networkHosts || []).map((h: any) => (
+                  <tr key={h.ip}>
+                    <td>{h.ip}</td>
+                    <td>{h.mac || "-"}</td>
+                    <td>{h.hostname || "-"}</td>
+                    <td>{h.subnet || "-"}</td>
+                    <td>{h.adapter || "-"}</td>
+                    <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
+                    <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
+                    <td>{faDate(h.first_seen)}</td>
+                    <td>{faDate(h.last_seen)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <h3>آخرین Heartbeatها</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>زمان</th>
+                  <th>IP</th>
+                  <th>Latency</th>
+                  <th>کاربر</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(detail.history || []).map((h: any) => (
+                  <tr key={h.id || h.received_at}>
+                    <td>{faDate(h.received_at)}</td>
+                    <td>{h.ip || "-"}</td>
+                    <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
+                    <td>{h.username || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
