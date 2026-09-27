@@ -87,7 +87,7 @@ async function heartbeat() {
     const response = await fetch(c.serverUrl.replace(/\/$/, "") + "/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json", ...(getKey() ? { "x-agent-key": getKey() } : {}) },
-      body: JSON.stringify(collect())
+      body: JSON.stringify({ ...collect(), latencyMs: runtime.lastLatencyMs })
     });
     const roundTrip = Date.now() - started;
     runtime.lastLatencyMs = roundTrip;
