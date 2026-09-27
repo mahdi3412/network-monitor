@@ -17,12 +17,13 @@ export async function GET() {
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
   const now = Date.now();
-  return NextResponse.json(rows.map((h) => {
+  const payload = rows.map((h) => {
     const timestamp = new Date(h.last_seen || h.scanned_at).getTime();
     const age = Number.isFinite(timestamp) ? Math.max(0, now - timestamp) : Number.POSITIVE_INFINITY;
     return {
       ...h,
       status: h.reachable && age <= 10 * 60 * 1000 ? "online" : age <= 30 * 60 * 1000 ? "recent" : "offline"
     };
-  }));
+  });
+  return new NextResponse(JSON.stringify(payload), { headers: { "Cache-Control": "no-store" } });
 }
