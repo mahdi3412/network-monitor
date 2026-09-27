@@ -28,6 +28,7 @@ type NetworkHost = {
   agent_id: string;
   ip: string;
   hostname: string;
+  username: string;
   mac: string;
   adapter: string;
   subnet: string;
@@ -59,6 +60,10 @@ function faDate(value?: string | null) {
 
 function statusLabel(status: string) {
   return status === "online" ? "آنلاین" : status === "recent" ? "اخیراً دیده‌شده" : "آفلاین";
+}
+
+function methodLabel(method: string) {
+  return method === "arp" ? "ARP" : method === "tcp" ? "TCP" : "ICMP";
 }
 
 export default function Home() {
@@ -132,9 +137,16 @@ export default function Home() {
   const filteredHosts = useMemo(() => {
     const q = query.toLowerCase();
     return hosts.filter((h) => {
-      const text = [h.ip, h.hostname, h.mac, h.adapter, h.subnet, h.agent_hostname, h.agent_ip]
-        .join(" ")
-        .toLowerCase();
+      const text = [
+        h.ip,
+        h.hostname,
+        h.username,
+        h.mac,
+        h.adapter,
+        h.subnet,
+        h.agent_hostname,
+        h.agent_ip
+      ].join(" ").toLowerCase();
 
       return (
         text.includes(q) &&
@@ -172,7 +184,11 @@ export default function Home() {
       const data = await response.json();
 
       if (!response.ok) {
-        setRangeMessage(data?.invalid?.length ? `رنج نامعتبر: ${data.invalid.join(", ")}` : (data?.error || "ذخیره رنج‌ها ناموفق بود."));
+        setRangeMessage(
+          data?.invalid?.length
+            ? `رنج نامعتبر: ${data.invalid.join(", ")}`
+            : (data?.error || "ذخیره رنج‌ها ناموفق بود.")
+        );
         return;
       }
 
@@ -215,52 +231,27 @@ export default function Home() {
       </div>
 
       <section className="grid">
-        <div className="card">
-          <span className="muted">کل کلاینت‌های Agent</span>
-          <div className="stat">{clients.length}</div>
-        </div>
-        <div className="card">
-          <span className="muted">کل اعضای کشف‌شده شبکه</span>
-          <div className="stat">{hosts.length}</div>
-        </div>
-        <div className="card">
-          <span className="muted">میزبان‌های فعال</span>
-          <div className="stat">{onlineHosts}</div>
-        </div>
-        <div className="card">
-          <span className="muted">رنج‌های شبکه</span>
-          <div className="stat">{subnets.length}</div>
-        </div>
-        <div className="card">
-          <span className="muted">Windows</span>
-          <div className="stat">{deviceTypeCounts.windows || 0}</div>
-        </div>
-        <div className="card">
-          <span className="muted">Printer</span>
-          <div className="stat">{deviceTypeCounts.printer || 0}</div>
-        </div>
-        <div className="card">
-          <span className="muted">Network Device</span>
-          <div className="stat">{deviceTypeCounts["network-device"] || 0}</div>
-        </div>
+        <div className="card"><span className="muted">کل کلاینت‌های Agent</span><div className="stat">{clients.length}</div></div>
+        <div className="card"><span className="muted">کل اعضای کشف‌شده شبکه</span><div className="stat">{hosts.length}</div></div>
+        <div className="card"><span className="muted">میزبان‌های فعال</span><div className="stat">{onlineHosts}</div></div>
+        <div className="card"><span className="muted">رنج‌های شبکه</span><div className="stat">{subnets.length}</div></div>
+        <div className="card"><span className="muted">Windows</span><div className="stat">{deviceTypeCounts.windows || 0}</div></div>
+        <div className="card"><span className="muted">Printer</span><div className="stat">{deviceTypeCounts.printer || 0}</div></div>
+        <div className="card"><span className="muted">Network Device</span><div className="stat">{deviceTypeCounts["network-device"] || 0}</div></div>
       </section>
 
       <section className="card">
         <div className="toolbar">
           <div className="tabs">
-            <button className={tab === "clients" ? "tab active" : "tab"} onClick={() => setTab("clients")}>
-              کلاینت‌ها
-            </button>
-            <button className={tab === "network" ? "tab active" : "tab"} onClick={() => setTab("network")}>
-              Network Inventory
-            </button>
+            <button className={tab === "clients" ? "tab active" : "tab"} onClick={() => setTab("clients")}>کلاینت‌ها</button>
+            <button className={tab === "network" ? "tab active" : "tab"} onClick={() => setTab("network")}>Network Inventory</button>
           </div>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={
               tab === "network"
-                ? "جستجو: IP، Hostname، MAC، Subnet..."
+                ? "جستجو: IP، Computer Name، Username، MAC، Subnet..."
                 : "جستجو: IP، نام کامپیوتر، پرسنلی، کاربر، MAC..."
             }
           />
@@ -270,43 +261,21 @@ export default function Home() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr>
-                  <th>وضعیت</th>
-                  <th>IP</th>
-                  <th>کامپیوتر</th>
-                  <th>کاربر</th>
-                  <th>پرسنلی</th>
-                  <th>سیستم‌عامل</th>
-                  <th>آخرین اتصال</th>
-                </tr>
+                <tr><th>وضعیت</th><th>IP</th><th>کامپیوتر</th><th>کاربر</th><th>پرسنلی</th><th>سیستم‌عامل</th><th>آخرین اتصال</th></tr>
               </thead>
               <tbody>
                 {filteredClients.map((c) => (
                   <tr key={c.agent_id}>
-                    <td>
-                      <span className={"status " + c.status}>{statusLabel(c.status)}</span>
-                    </td>
+                    <td><span className={"status " + c.status}>{statusLabel(c.status)}</span></td>
                     <td>{c.ip || "-"}</td>
-                    <td>
-                      <button className="link-button" onClick={() => openDetail(c.agent_id)}>
-                        {c.hostname || "-"}
-                      </button>
-                    </td>
+                    <td><button className="link-button" onClick={() => openDetail(c.agent_id)}>{c.hostname || "-"}</button></td>
                     <td>{[c.first_name, c.last_name].filter(Boolean).join(" ") || c.username || "-"}</td>
                     <td>{c.personnel_id || "-"}</td>
-                    <td>
-                      {c.os} {c.os_version}
-                    </td>
+                    <td>{c.os} {c.os_version}</td>
                     <td>{faDate(c.last_seen)}</td>
                   </tr>
                 ))}
-                {!filteredClients.length && (
-                  <tr>
-                    <td colSpan={7} className="muted">
-                      هنوز کلاینتی ثبت نشده است.
-                    </td>
-                  </tr>
-                )}
+                {!filteredClients.length && <tr><td colSpan={7} className="muted">هنوز کلاینتی ثبت نشده است.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -315,11 +284,8 @@ export default function Home() {
             <div className="range-settings">
               <div>
                 <h3>رنج‌های IP برای اسکن سرور</h3>
-                <p className="muted">
-                  هر رنج را در یک خط وارد کن، مثال: 192.168.103.0/24
-                </p>
+                <p className="muted">هر رنج را در یک خط وارد کن، مثال: 192.168.103.0/24</p>
               </div>
-
               <textarea
                 className="range-textarea"
                 value={configuredRangesText}
@@ -328,17 +294,22 @@ export default function Home() {
                 rows={6}
                 dir="ltr"
               />
-
               <div className="range-actions">
                 <button className="refresh" onClick={saveRanges} disabled={savingRanges}>
                   {savingRanges ? "در حال ذخیره و اسکن..." : "ذخیره رنج‌ها و شروع اسکن"}
                 </button>
-                <span className="muted">
-                  {configuredRangeCount} رنج تنظیم‌شده · {scanning ? "اسکن در حال انجام است" : "اسکن متوقف است"}
-                </span>
+                <span className="muted">{configuredRangeCount} رنج تنظیم‌شده · {scanning ? "اسکن در حال انجام است" : "اسکن متوقف است"}</span>
               </div>
-
               {rangeMessage && <p className="range-message">{rangeMessage}</p>}
+            </div>
+
+            <div className="inventory-help">
+              <b>راهنمای ستون‌ها:</b>
+              <span><strong>Latency</strong> زمان تقریبی رفت‌وبرگشت پاسخ شبکه از سرور تا IP است؛ عدد کمتر معمولاً یعنی مسیر سریع‌تر.</span>
+              <span><strong>Computer Name</strong> نام سیستم است که از DNS یا NetBIOS گرفته می‌شود.</span>
+              <span><strong>Username</strong> نام کاربر ثبت‌شده در NetBIOS است و فقط برای سیستم‌هایی که این اطلاعات را ارائه کنند نمایش داده می‌شود.</span>
+              <span><strong>MAC</strong> شناسه سخت‌افزاری کارت شبکه است؛ برای رنج‌های پشت روتر معمولاً از خود سرور قابل مشاهده نیست.</span>
+              <span><strong>Method</strong> مشخص می‌کند IP با ICMP، ARP یا TCP پیدا شده است.</span>
             </div>
 
             <div className="range-health">
@@ -347,18 +318,9 @@ export default function Home() {
                 <span>{configuredRangeCount} رنج دستی</span>
                 <span>{ranges.filter((r) => r.online_hosts > 0).length} رنج دارای میزبان فعال</span>
               </div>
-
               <div className="table-wrap">
                 <table className="table">
-                  <thead>
-                    <tr>
-                      <th>رنج</th>
-                      <th>منبع</th>
-                      <th>کل میزبان‌های دیده‌شده</th>
-                      <th>فعال</th>
-                      <th>آخرین مشاهده</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>رنج</th><th>منبع</th><th>کل میزبان‌های دیده‌شده</th><th>فعال</th><th>آخرین مشاهده</th></tr></thead>
                   <tbody>
                     {ranges.map((r) => (
                       <tr key={r.subnet}>
@@ -377,26 +339,20 @@ export default function Home() {
             <div className="filters">
               <select value={subnet} onChange={(e) => setSubnet(e.target.value)}>
                 <option value="all">همه رنج‌ها</option>
-                {subnets.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
+                {subnets.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
-
               <select value={method} onChange={(e) => setMethod(e.target.value)}>
                 <option value="all">همه روش‌ها</option>
                 <option value="icmp">ICMP</option>
                 <option value="arp">ARP</option>
+                <option value="tcp">TCP</option>
               </select>
-
               <select value={status} onChange={(e) => setStatus(e.target.value)}>
                 <option value="all">همه وضعیت‌ها</option>
                 <option value="online">فعال</option>
                 <option value="recent">اخیراً دیده‌شده</option>
                 <option value="offline">قدیمی</option>
               </select>
-
               <select value={deviceType} onChange={(e) => setDeviceType(e.target.value)}>
                 <option value="all">همه نوع دستگاه‌ها</option>
                 <option value="windows">Windows</option>
@@ -419,46 +375,29 @@ export default function Home() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>وضعیت</th>
-                    <th>IP</th>
-                    <th>Hostname</th>
-                    <th>MAC</th>
-                    <th>Subnet</th>
-                    <th>نوع</th>
-                    <th>Services</th>
-                    <th>روش</th>
-                    <th>Latency</th>
-                    <th>Agent</th>
-                    <th>اولین مشاهده</th>
-                    <th>آخرین مشاهده</th>
+                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>MAC</th><th>Subnet</th>
+                    <th>نوع</th><th>Services</th><th>روش</th><th>Latency</th><th>Agent</th><th>اولین مشاهده</th><th>آخرین مشاهده</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredHosts.map((h) => (
                     <tr key={h.agent_id + ":" + h.ip}>
-                      <td>
-                        <span className={"status " + h.status}>{statusLabel(h.status)}</span>
-                      </td>
+                      <td><span className={"status " + h.status}>{statusLabel(h.status)}</span></td>
                       <td>{h.ip}</td>
                       <td>{h.hostname || "-"}</td>
+                      <td>{h.username || "-"}</td>
                       <td>{h.mac || "-"}</td>
                       <td>{h.subnet || "-"}</td>
                       <td>{h.device_type || "unknown"}</td>
                       <td>{(() => { try { return h.services ? JSON.parse(h.services).join(", ") : "-"; } catch { return "-"; } })()}</td>
-                      <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
+                      <td>{methodLabel(h.method)}</td>
                       <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
                       <td>{h.agent_hostname || h.agent_ip || "-"}</td>
                       <td>{faDate(h.first_seen)}</td>
                       <td>{faDate(h.last_seen)}</td>
                     </tr>
                   ))}
-                  {!filteredHosts.length && (
-                    <tr>
-                      <td colSpan={12} className="muted">
-                        در این فیلتر نتیجه‌ای پیدا نشد.
-                      </td>
-                    </tr>
-                  )}
+                  {!filteredHosts.length && <tr><td colSpan={13} className="muted">در این فیلتر نتیجه‌ای پیدا نشد.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -471,13 +410,9 @@ export default function Home() {
           <div className="detail-head">
             <div>
               <h2>{detail.client.hostname}</h2>
-              <p className="muted">
-                {detail.client.ip || "-"} · {detail.client.status}
-              </p>
+              <p className="muted">{detail.client.ip || "-"} · {detail.client.status}</p>
             </div>
-            <button className="refresh" onClick={() => setDetail(null)}>
-              بستن
-            </button>
+            <button className="refresh" onClick={() => setDetail(null)}>بستن</button>
           </div>
 
           <div className="detail-grid">
@@ -495,31 +430,13 @@ export default function Home() {
           <h3>اعضای قابل مشاهده شبکه</h3>
           <div className="table-wrap">
             <table className="table">
-              <thead>
-                <tr>
-                  <th>IP</th>
-                  <th>MAC</th>
-                  <th>نام میزبان</th>
-                  <th>Subnet</th>
-                  <th>Interface</th>
-                  <th>روش</th>
-                  <th>Latency</th>
-                  <th>اولین مشاهده</th>
-                  <th>آخرین مشاهده</th>
-                </tr>
-              </thead>
+              <thead><tr><th>IP</th><th>MAC</th><th>نام میزبان</th><th>Username</th><th>Subnet</th><th>Interface</th><th>روش</th><th>Latency</th><th>اولین مشاهده</th><th>آخرین مشاهده</th></tr></thead>
               <tbody>
                 {(detail.networkHosts || []).map((h: any) => (
                   <tr key={h.ip}>
-                    <td>{h.ip}</td>
-                    <td>{h.mac || "-"}</td>
-                    <td>{h.hostname || "-"}</td>
-                    <td>{h.subnet || "-"}</td>
-                    <td>{h.adapter || "-"}</td>
-                    <td>{h.method === "arp" ? "ARP" : "ICMP"}</td>
-                    <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
-                    <td>{faDate(h.first_seen)}</td>
-                    <td>{faDate(h.last_seen)}</td>
+                    <td>{h.ip}</td><td>{h.mac || "-"}</td><td>{h.hostname || "-"}</td><td>{h.username || "-"}</td><td>{h.subnet || "-"}</td>
+                    <td>{h.adapter || "-"}</td><td>{methodLabel(h.method)}</td><td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
+                    <td>{faDate(h.first_seen)}</td><td>{faDate(h.last_seen)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -529,21 +446,11 @@ export default function Home() {
           <h3>آخرین Heartbeatها</h3>
           <div className="table-wrap">
             <table className="table">
-              <thead>
-                <tr>
-                  <th>زمان</th>
-                  <th>IP</th>
-                  <th>Latency</th>
-                  <th>کاربر</th>
-                </tr>
-              </thead>
+              <thead><tr><th>زمان</th><th>IP</th><th>Latency</th><th>کاربر</th></tr></thead>
               <tbody>
                 {(detail.history || []).map((h: any) => (
                   <tr key={h.id || h.received_at}>
-                    <td>{faDate(h.received_at)}</td>
-                    <td>{h.ip || "-"}</td>
-                    <td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td>
-                    <td>{h.username || "-"}</td>
+                    <td>{faDate(h.received_at)}</td><td>{h.ip || "-"}</td><td>{h.latency_ms != null ? h.latency_ms + " ms" : "-"}</td><td>{h.username || "-"}</td>
                   </tr>
                 ))}
               </tbody>
