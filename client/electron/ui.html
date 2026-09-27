@@ -20,9 +20,9 @@ label{display:block;margin:11px 0 5px;color:#9eabc6}input{width:100%;background:
     <div class="item"><span>Agent ID</span><b id="agentId">-</b></div>
   </div>
   <div id="error" class="error"></div>
-  <div class="actions"><button id="heartbeat" class="secondary">ارسال Heartbeat</button></div>
+  <div class="actions"><button id="heartbeat" class="secondary">ارسال Heartbeat</button><button id="scan">اسکن شبکه</button></div><div id="scanMessage" class="success"></div>
 </div>
-<div class="box"><strong>اطلاعات سیستم</strong><div id="info" class="grid"></div></div>
+<div class="box"><div class="status"><strong>اعضای قابل مشاهده شبکه</strong><span id="scanCount">0</span></div><p class="sub">اسکن از همین سیستم انجام می‌شود و فقط میزبان‌های قابل دسترس در Subnet فعلی را نشان می‌دهد.</p><div id="hosts"></div></div><div class="box"><strong>اطلاعات سیستم</strong><div id="info" class="grid"></div></div>
 <div class="box">
   <strong>تنظیمات</strong>
   <label>آدرس سرور</label><input id="serverUrl">
@@ -43,6 +43,8 @@ function render(s){
   $("next").textContent=formatDate(s.runtime.nextHeartbeat);
   const b=$("badge");b.className="badge "+(s.runtime.connected?"online":s.runtime.lastAttempt?"offline":"pending");b.textContent=s.runtime.connected?"متصل":"قطع / در انتظار اتصال";
   $("error").textContent=s.runtime.lastError||"";
+  $("scanCount").textContent=(s.networkHosts||[]).length+" میزبان";
+  $("hosts").innerHTML=(s.networkHosts||[]).map(h=>"<div class=\"item\" style=\"margin-top:8px\"><span>"+h.ip+"</span><b>"+(h.hostname||"نامشخص")+" · "+(h.latencyMs!=null?h.latencyMs+" ms":"-")+"</b></div>").join("")||"<div class=\"muted\">هنوز اسکن انجام نشده است.</div>";
   $("info").innerHTML=[
     ["IP",s.data.ip||"-"],["MAC",s.data.mac||"-"],["Adapter",s.data.adapter||"-"],["Computer",s.data.hostname||"-"],
     ["User",s.data.username||"-"],["نام",((s.data.firstName||"")+" "+(s.data.lastName||"")).trim()||"-"],
@@ -52,5 +54,6 @@ function render(s){
 }
 (async()=>{render(await window.agent.getState());window.agent.onState(render)})();
 $("heartbeat").onclick=()=>window.agent.heartbeatNow();
+$("scan").onclick=async()=>{ $("scan").disabled=true; $("scan").textContent="در حال اسکن..."; const hosts=await window.agent.scanNetwork(); $("scan").disabled=false; $("scan").textContent="اسکن شبکه"; $("scanMessage").textContent="اسکن انجام شد: "+hosts.length+" میزبان قابل دسترس پیدا شد." };
 $("save").onclick=async()=>{const s=await window.agent.saveConfig({serverUrl:$("serverUrl").value,firstName:$("firstName").value,lastName:$("lastName").value,personnelId:$("personnelId").value,heartbeatSeconds:$("heartbeatSeconds").value});render(s);$("message").className="success";$("message").textContent="تنظیمات ذخیره شد و اتصال مجدداً بررسی شد."};
 </script></body></html>
