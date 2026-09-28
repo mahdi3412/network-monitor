@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { all, initDb, run } from "../../../lib/db";
+import { all, initDb, run, transaction } from "../../../lib/db";
 import {
   getAdConfig,
   lookupAdComputer,
@@ -73,36 +73,23 @@ export async function POST(request: Request) {
       const computers = await syncAdComputers();
       await initDb();
 
-      for (const computer of computers) {
-        const name = String(computer?.name || computer?.dnsHostName || "").trim();
-        if (!name) continue;
+      const syncTime = new Date().toISOString();
+      const statements = computers
+        .map((computer: any) => {
+          const name = String(computer?.name || computer?.dnsHostName || "").trim();
+          if (!name) return null;
+          return {
+            sql: "INSERT INTO directory_computers(name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
+            params: [name, String(computer?.dnsHostName || ""), String(computer?.operatingSystem || ""), String(computer?.operatingSystemVersion || ""), String(computer?.description || ""), String(computer?.managedBy || ""), String(computer?.distinguishedName || ""), syncTime]
+          };
+        })
+        .filter(Boolean) as Array<{ sql: string; params: any[] }>;
 
-        await run(
-          "INSERT INTO directory_computers(name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
-          [
-            name,
-            String(computer?.dnsHostName || ""),
-            String(computer?.operatingSystem || ""),
-            String(computer?.operatingSystemVersion || ""),
-            String(computer?.description || ""),
-            String(computer?.managedBy || ""),
-            String(computer?.distinguishedName || ""),
-            new Date().toISOString()
-          ]
-        );
-      }
+      if (statements.length) await transaction(statements);
 
-      const matchedInventory = await all<any>(`
-        SELECT COUNT(DISTINCT nh.ip) AS count
-        FROM network_hosts nh
-        INNER JOIN directory_computers dc
-          ON lower(trim(dc.name)) = lower(trim(CASE
-            WHEN instr(nh.hostname, '.') > 0
-              THEN substr(nh.hostname, 1, instr(nh.hostname, '.') - 1)
-            ELSE nh.hostname
-          END))
-          OR lower(trim(dc.dns_host_name)) = lower(trim(nh.hostname))
-      `);
+      const matchedInventory = await all<any>(
+        "WITH inventory AS (SELECT nh.ip, trim(lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.')) AS effective_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id) SELECT COUNT(DISTINCT inventory.ip) AS count FROM inventory INNER JOIN directory_computers dc ON trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(inventory.effective_hostname, '.') > 0 THEN substr(inventory.effective_hostname, 1, instr(inventory.effective_hostname, '.') - 1) ELSE inventory.effective_hostname END), '.') OR trim(lower(dc.dns_host_name), '.') = inventory.effective_hostname"
+      );
 
       return json({
         ok: true,
@@ -115,32 +102,22 @@ export async function POST(request: Request) {
       const users = await syncAdUsers();
       await initDb();
 
-      let synced = 0;
-      for (const user of users) {
-        const username = String(user?.username || "").trim();
-        if (!username) continue;
+      const syncTime = new Date().toISOString();
+      const statements = users
+        .map((user: any) => {
+          const username = String(user?.username || "").trim();
+          if (!username) return null;
+          const personnelId = String(user?.personnelId || user?.employeeNumber || username).trim();
+          return {
+            sql: "INSERT INTO directory_users(personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(personnel_id) DO UPDATE SET username=excluded.username,user_principal_name=excluded.user_principal_name,display_name=excluded.display_name,first_name=excluded.first_name,last_name=excluded.last_name,department=excluded.department,title=excluded.title,email=excluded.email,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
+            params: [personnelId, username, String(user?.userPrincipalName || ""), String(user?.displayName || ""), String(user?.firstName || ""), String(user?.lastName || ""), String(user?.department || ""), String(user?.title || ""), String(user?.email || ""), String(user?.distinguishedName || ""), syncTime]
+          };
+        })
+        .filter(Boolean) as Array<{ sql: string; params: any[] }>;
 
-        const personnelId = String(user?.personnelId || user?.employeeNumber || username).trim();
-        await run(
-          "INSERT INTO directory_users(personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(personnel_id) DO UPDATE SET username=excluded.username,user_principal_name=excluded.user_principal_name,display_name=excluded.display_name,first_name=excluded.first_name,last_name=excluded.last_name,department=excluded.department,title=excluded.title,email=excluded.email,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
-          [
-            personnelId,
-            username,
-            String(user?.userPrincipalName || ""),
-            String(user?.displayName || ""),
-            String(user?.firstName || ""),
-            String(user?.lastName || ""),
-            String(user?.department || ""),
-            String(user?.title || ""),
-            String(user?.email || ""),
-            String(user?.distinguishedName || ""),
-            new Date().toISOString()
-          ]
-        );
-        synced += 1;
-      }
+      if (statements.length) await transaction(statements);
 
-      return json({ ok: true, synced, total: users.length });
+      return json({ ok: true, synced: statements.length, total: users.length });
     }
 
     if (body?.action === "sync-user" && body?.personnelId) {
