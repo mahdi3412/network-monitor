@@ -339,7 +339,7 @@ foreach ($serverUrl in $servers) {
     $request.Filter = $filter
     $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
     foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
-      $request.SizeLimit = 1000
+      $request.SizeLimit = 0
       $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
@@ -363,8 +363,15 @@ foreach ($serverUrl in $servers) {
         })
       }
 
-      $pageResponse = $response.Controls | Where-Object { $_.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl" } | Select-Object -First 1
-      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { [byte[]]::new(0) }
+      $pageResponse = $null
+      for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
+        $control = $response.Controls[$controlIndex]
+        if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
+          $pageResponse = $control
+          break
+        }
+      }
+      $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
     } while ($cookie.Length -gt 0)
 
     [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; users = @($users) } | ConvertTo-Json -Compress -Depth 6
