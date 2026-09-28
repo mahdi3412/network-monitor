@@ -103,18 +103,39 @@ export async function POST(request: Request) {
       }
 
       const matchedIps = new Set<string>();
+      let hostsWithHostname = 0;
+      let hostnameMatches = 0;
+      let dnsMatches = 0;
+      const unmatchedSamples: string[] = [];
+      const matchedSamples: string[] = [];
+
       for (const host of inventory) {
         const effectiveHostname = normalizeHostname(host.hostname || host.agent_hostname);
         if (!effectiveHostname) continue;
-        if (names.has(shortHostname(effectiveHostname)) || dnsNames.has(effectiveHostname)) {
+        hostsWithHostname += 1;
+
+        const hostnameMatch = names.has(shortHostname(effectiveHostname));
+        const dnsMatch = dnsNames.has(effectiveHostname);
+        if (hostnameMatch || dnsMatch) {
           matchedIps.add(host.ip);
+          if (hostnameMatch) hostnameMatches += 1;
+          else if (dnsMatch) dnsMatches += 1;
+          if (matchedSamples.length < 5) matchedSamples.push(effectiveHostname);
+        } else if (unmatchedSamples.length < 5) {
+          unmatchedSamples.push(effectiveHostname);
         }
       }
 
       return json({
         ok: true,
         synced: computers.length,
-        matchedInventory: matchedIps.size
+        matchedInventory: matchedIps.size,
+        inventoryHosts: inventory.length,
+        inventoryHostsWithHostname: hostsWithHostname,
+        hostnameMatches,
+        dnsMatches,
+        unmatchedSamples,
+        matchedSamples
       });
     }
 
