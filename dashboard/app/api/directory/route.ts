@@ -88,7 +88,7 @@ export async function POST(request: Request) {
       if (statements.length) await transaction(statements);
 
       const matchedInventory = await all<any>(
-        "WITH inventory AS (SELECT nh.ip, trim(lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.')) AS effective_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id) SELECT COUNT(DISTINCT inventory.ip) AS count FROM inventory INNER JOIN directory_computers dc ON trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(inventory.effective_hostname, '.') > 0 THEN substr(inventory.effective_hostname, 1, instr(inventory.effective_hostname, '.') - 1) ELSE inventory.effective_hostname END), '.') OR trim(lower(dc.dns_host_name), '.') = inventory.effective_hostname"
+        "WITH inventory AS (SELECT nh.ip, trim(lower(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.') AS effective_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id) SELECT COUNT(DISTINCT inventory.ip) AS count FROM inventory INNER JOIN directory_computers dc ON trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(inventory.effective_hostname, '.') > 0 THEN substr(inventory.effective_hostname, 1, instr(inventory.effective_hostname, '.') - 1) ELSE inventory.effective_hostname END), '.') OR trim(lower(dc.dns_host_name), '.') = inventory.effective_hostname"
       );
 
       return json({
