@@ -92,6 +92,11 @@ export async function POST(request: Request) {
 
       if (statements.length) await transaction(statements);
 
+      const rawComputerSamples = computers.slice(0, 5).map((computer: any) => ({
+        name: String(computer?.name || ""),
+        dnsHostName: String(computer?.dnsHostName || ""),
+        distinguishedName: String(computer?.distinguishedName || "")
+      }));
       const [inventory, directoryComputers] = await Promise.all([
         all<any>("SELECT nh.ip, nh.hostname, c.hostname AS agent_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
         all<any>("SELECT name,dns_host_name FROM directory_computers")
@@ -135,6 +140,9 @@ export async function POST(request: Request) {
       return json({
         ok: true,
         synced: computers.length,
+        persistedComputers: statements.length,
+        directoryComputerRows: directoryComputers.length,
+        rawComputerSamples,
         matchedInventory: matchedIps.size,
         inventoryHosts: inventory.length,
         inventoryHostsWithHostname: hostsWithHostname,
