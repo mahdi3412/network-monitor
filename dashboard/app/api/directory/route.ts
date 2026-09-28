@@ -77,11 +77,15 @@ export async function POST(request: Request) {
       const syncTime = new Date().toISOString();
       const statements = computers
         .map((computer: any) => {
-          const name = String(computer?.name || computer?.dnsHostName || "").trim();
+          const dnsHostName = String(computer?.dnsHostName || "").trim();
+          const rawName = String(computer?.name || "").trim();
+          const distinguishedName = String(computer?.distinguishedName || "").trim();
+          const cnMatch = distinguishedName.match(/^CN=([^,]+)/i);
+          const name = rawName || (cnMatch ? cnMatch[1].trim() : "") || dnsHostName.split(".")[0].trim();
           if (!name) return null;
           return {
             sql: "INSERT INTO directory_computers(name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
-            params: [name, String(computer?.dnsHostName || ""), String(computer?.operatingSystem || ""), String(computer?.operatingSystemVersion || ""), String(computer?.description || ""), String(computer?.managedBy || ""), String(computer?.distinguishedName || ""), syncTime]
+            params: [name, dnsHostName, String(computer?.operatingSystem || ""), String(computer?.operatingSystemVersion || ""), String(computer?.description || ""), String(computer?.managedBy || ""), String(computer?.distinguishedName || ""), syncTime]
           };
         })
         .filter(Boolean) as Array<{ sql: string; params: any[] }>;
