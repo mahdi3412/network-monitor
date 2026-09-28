@@ -108,6 +108,8 @@ export async function POST(request: Request) {
       let dnsMatches = 0;
       const unmatchedSamples: string[] = [];
       const matchedSamples: string[] = [];
+      const adNameSamples = Array.from(names).slice(0, 10);
+      const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       for (const host of inventory) {
         const effectiveHostname = normalizeHostname(host.hostname || host.agent_hostname);
@@ -121,7 +123,7 @@ export async function POST(request: Request) {
           if (hostnameMatch) hostnameMatches += 1;
           else if (dnsMatch) dnsMatches += 1;
           if (matchedSamples.length < 5) matchedSamples.push(effectiveHostname);
-        } else if (unmatchedSamples.length < 5) {
+        } else if (unmatchedSamples.length < 10 && !unmatchedSamples.includes(effectiveHostname)) {
           unmatchedSamples.push(effectiveHostname);
         }
       }
