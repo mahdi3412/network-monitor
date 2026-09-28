@@ -112,6 +112,18 @@ export async function initDb(): Promise<void> {
     UNIQUE(agent_id, ip)
   )`);
 
+  await run(`CREATE TABLE IF NOT EXISTS directory_computers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    dns_host_name TEXT,
+    operating_system TEXT,
+    operating_system_version TEXT,
+    description TEXT,
+    managed_by TEXT,
+    distinguished_name TEXT,
+    last_sync TEXT NOT NULL
+  `);
+
   await run(`CREATE TABLE IF NOT EXISTS directory_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     personnel_id TEXT UNIQUE NOT NULL,
