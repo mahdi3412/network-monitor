@@ -42,6 +42,14 @@ type NetworkHost = {
   last_seen: string;
   agent_hostname?: string;
   agent_ip?: string;
+  directory_personnel_id?: string;
+  directory_display_name?: string;
+  directory_first_name?: string;
+  directory_last_name?: string;
+  directory_department?: string;
+  directory_title?: string;
+  directory_email?: string;
+  directory_upn?: string;
   status: "online" | "recent" | "offline";
 };
 
@@ -85,6 +93,7 @@ export default function Home() {
   const [directoryLoading, setDirectoryLoading] = useState(false);
   const [adConfig, setAdConfig] = useState<any>(null);
   const [adTesting, setAdTesting] = useState(false);
+  const [adSyncing, setAdSyncing] = useState(false);
   const [adMessage, setAdMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -155,7 +164,11 @@ export default function Home() {
         h.adapter,
         h.subnet,
         h.agent_hostname,
-        h.agent_ip
+        h.agent_ip,
+        h.directory_personnel_id,
+        h.directory_display_name,
+        h.directory_department,
+        h.directory_title
       ].join(" ").toLowerCase();
 
       return (
@@ -235,6 +248,31 @@ export default function Home() {
       setAdMessage("امکان تست Active Directory وجود ندارد.");
     } finally {
       setAdTesting(false);
+    }
+  }
+
+  async function syncActiveDirectoryUsers() {
+    setAdSyncing(true);
+    setAdMessage("");
+
+    try {
+      const response = await fetch("/api/directory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync-users" })
+      });
+      const data = await response.json();
+
+      if (response.ok && data?.ok) {
+        setAdMessage(`همگام‌سازی AD انجام شد: ${data.synced} کاربر`);
+        await load();
+      } else {
+        setAdMessage(data?.error || "همگام‌سازی کاربران AD ناموفق بود.");
+      }
+    } catch {
+      setAdMessage("ارتباط با سرور برای همگام‌سازی AD برقرار نشد.");
+    } finally {
+      setAdSyncing(false);
     }
   }
 
@@ -357,9 +395,14 @@ export default function Home() {
                   {adConfig?.server ? ` · ${adConfig.server}:${adConfig.port}` : ""}
                 </p>
               </div>
-              <button className="refresh" onClick={testActiveDirectory} disabled={adTesting || !adConfig?.enabled}>
-                {adTesting ? "در حال تست..." : "تست اتصال AD"}
-              </button>
+              <div className="range-actions">
+                <button className="refresh" onClick={testActiveDirectory} disabled={adTesting || !adConfig?.enabled}>
+                  {adTesting ? "در حال تست..." : "تست اتصال AD"}
+                </button>
+                <button className="refresh" onClick={syncActiveDirectoryUsers} disabled={adSyncing || !adConfig?.ready}>
+                  {adSyncing ? "در حال همگام‌سازی..." : "همگام‌سازی کاربران AD"}
+                </button>
+              </div>
               {adMessage && <span className="muted">{adMessage}</span>}
             </div>
 
@@ -368,6 +411,7 @@ export default function Home() {
               <span><strong>Latency</strong> زمان تقریبی رفت‌وبرگشت پاسخ شبکه از سرور تا IP است؛ عدد کمتر معمولاً یعنی مسیر سریع‌تر.</span>
               <span><strong>Computer Name</strong> نام سیستم است که از DNS یا NetBIOS گرفته می‌شود.</span>
               <span><strong>Username</strong> نام کاربر ثبت‌شده در NetBIOS است و فقط برای سیستم‌هایی که این اطلاعات را ارائه کنند نمایش داده می‌شود.</span>
+              <span><strong>اطلاعات AD</strong> بعد از همگام‌سازی، Username به حساب AD متصل می‌شود و نام، شماره پرسنلی، واحد و سمت در داده Inventory قابل جستجو خواهد بود.</span>
               <span><strong>MAC</strong> شناسه سخت‌افزاری کارت شبکه است؛ برای رنج‌های پشت روتر معمولاً از خود سرور قابل مشاهده نیست.</span>
               <span><strong>Method</strong> مشخص می‌کند IP با ICMP، ARP یا TCP پیدا شده است.</span>
             </div>
@@ -435,7 +479,7 @@ export default function Home() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>MAC</th><th>Subnet</th>
+                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>MAC</th><th>Subnet</th>
                     <th>نوع</th><th>Services</th><th>روش</th><th>Latency</th><th>Agent</th><th>اولین مشاهده</th><th>آخرین مشاهده</th>
                   </tr>
                 </thead>
@@ -446,6 +490,9 @@ export default function Home() {
                       <td>{h.ip}</td>
                       <td>{h.hostname || "-"}</td>
                       <td>{h.username || "-"}</td>
+                      <td>{h.directory_display_name || "-"}</td>
+                      <td>{h.directory_personnel_id || "-"}</td>
+                      <td>{h.directory_department || "-"}</td>
                       <td>{h.mac || "-"}</td>
                       <td>{h.subnet || "-"}</td>
                       <td>{h.device_type || "unknown"}</td>
