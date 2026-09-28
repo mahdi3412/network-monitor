@@ -491,7 +491,7 @@ foreach ($serverUrl in $servers) {
         $name = First-AttributeValue $entry "name"
         $dns = First-AttributeValue $entry "dNSHostName"
         if (-not $name -and $dn -match '^CN=([^,]+)') { $name = $Matches[1].Trim() }
-        if (-not $name -and $dns) { $name = ($dns -split '.')[0] }
+        if (-not $name -and $dns) { $name = ($dns -split '\.')[0] }
         if (-not $name -and -not $dns) { continue }
         $computers.Add([PSCustomObject]@{
           name = $name;
@@ -503,8 +503,15 @@ foreach ($serverUrl in $servers) {
           distinguishedName = $dn
         })
       }
-      $pageResponse = $response.Controls | Where-Object { $_.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl" } | Select-Object -First 1
-      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { [byte[]]::new(0) }
+      $pageResponse = $null
+      for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
+        $control = $response.Controls[$controlIndex]
+        if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
+          $pageResponse = $control
+          break
+        }
+      }
+      $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
     } while ($cookie.Length -gt 0)
 
     [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($computers) } | ConvertTo-Json -Compress -Depth 6
