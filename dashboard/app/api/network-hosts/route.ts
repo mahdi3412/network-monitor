@@ -35,9 +35,21 @@ export async function GET() {
   }
 
   for (const row of rows) {
-    const effectiveHostname = normalizeHostname(row.hostname || row.agent_hostname);
-    const shortName = shortHostname(effectiveHostname);
-    const computer = computersByName.get(shortName) || computersByDns.get(effectiveHostname);
+    const hostnameCandidates = [row.agent_hostname, row.hostname]
+      .map(normalizeHostname)
+      .filter(Boolean);
+    let computer: any = null;
+    let matchType: string | null = null;
+
+    for (const candidate of hostnameCandidates) {
+      const shortName = shortHostname(candidate);
+      computer = computersByName.get(shortName) || computersByDns.get(candidate);
+      if (computer) {
+        matchType = computersByName.has(shortName) ? "hostname" : "dns";
+        break;
+      }
+    }
+
     row.ad_computer_name = computer?.name || null;
     row.ad_dns_host_name = computer?.dns_host_name || null;
     row.ad_operating_system = computer?.operating_system || null;
@@ -46,9 +58,7 @@ export async function GET() {
     row.ad_managed_by = computer?.managed_by || null;
     row.ad_computer_dn = computer?.distinguished_name || null;
     row.ad_matched = computer ? 1 : 0;
-    row.ad_match_type = computer
-      ? computersByName.get(shortName) ? "hostname" : "dns"
-      : null;
+    row.ad_match_type = matchType;
   }
 
   const now = Date.now();
