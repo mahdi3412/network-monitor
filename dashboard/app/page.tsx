@@ -279,7 +279,7 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok && data?.ok) {
-        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم · اتصال به Inventory: ${data.matchedInventory ?? 0}`);
+        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم · Inventory: ${data.inventoryHosts ?? 0} · دارای نام: ${data.inventoryHostsWithHostname ?? 0} · تطبیق نام: ${data.hostnameMatches ?? 0} · تطبیق DNS: ${data.dnsMatches ?? 0}`);
         await load();
       } else {
         setAdMessage(data?.error || "همگام‌سازی کامپیوترهای AD ناموفق بود.");
