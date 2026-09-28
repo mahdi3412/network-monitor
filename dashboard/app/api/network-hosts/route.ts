@@ -27,7 +27,21 @@ export async function GET() {
       dc.operating_system_version AS ad_operating_system_version,
       dc.description AS ad_computer_description,
       dc.managed_by AS ad_managed_by,
-      dc.distinguished_name AS ad_computer_dn
+      dc.distinguished_name AS ad_computer_dn,
+      CASE
+        WHEN dc.name IS NULL THEN 0
+        ELSE 1
+      END AS ad_matched,
+      CASE
+        WHEN dc.name IS NULL THEN NULL
+        WHEN lower(trim(dc.name)) = lower(trim(CASE
+          WHEN instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.') > 0
+            THEN substr(COALESCE(NULLIF(nh.hostname,''), c.hostname),1,instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.')-1)
+          ELSE COALESCE(NULLIF(nh.hostname,''), c.hostname)
+        END)) THEN 'hostname'
+        WHEN lower(trim(dc.dns_host_name)) = lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname))) THEN 'dns'
+        ELSE 'hostname'
+      END AS ad_match_type
     FROM network_hosts nh
     LEFT JOIN clients c ON c.agent_id = nh.agent_id
     LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
@@ -73,6 +87,8 @@ export async function GET() {
     if (!current.ad_computer_description && row.ad_computer_description) current.ad_computer_description = row.ad_computer_description;
     if (!current.ad_managed_by && row.ad_managed_by) current.ad_managed_by = row.ad_managed_by;
     if (!current.ad_computer_dn && row.ad_computer_dn) current.ad_computer_dn = row.ad_computer_dn;
+    if (!current.ad_matched && row.ad_matched) current.ad_matched = row.ad_matched;
+    if (!current.ad_match_type && row.ad_match_type) current.ad_match_type = row.ad_match_type;
     if (!current.mac && row.mac) current.mac = row.mac;
     if (!current.subnet && row.subnet) current.subnet = row.subnet;
     if (!current.device_type && row.device_type) current.device_type = row.device_type;
