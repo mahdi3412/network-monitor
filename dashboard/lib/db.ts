@@ -28,18 +28,24 @@ export function run(sql: string, params: any[] = []): Promise<void> {
 
 export function transaction(statements: Array<{ sql: string; params?: any[] }>): Promise<void> {
   return new Promise((resolve, reject) => {
-    db.serialize(() => {
-      db.run("BEGIN TRANSACTION", (beginError) => {
-        if (beginError) return reject(beginError);
-        for (const statement of statements) {
-          db.run(statement.sql, statement.params || [], (error) => {
-            if (error) {
-              db.run("ROLLBACK", () => reject(error));
-            }
-          });
-        }
+    const execute = (index: number) => {
+      if (index >= statements.length) {
         db.run("COMMIT", (commitError) => commitError ? reject(commitError) : resolve());
+        return;
+      }
+      const statement = statements[index];
+      db.run(statement.sql, statement.params || [], (error) => {
+        if (error) {
+          db.run("ROLLBACK", () => reject(error));
+          return;
+        }
+        execute(index + 1);
       });
+    };
+
+    db.run("BEGIN TRANSACTION", (beginError) => {
+      if (beginError) reject(beginError);
+      else execute(0);
     });
   });
 }
