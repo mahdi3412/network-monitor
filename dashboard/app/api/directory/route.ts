@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import dns from "node:dns/promises";
 import { all, initDb, run, transaction } from "../../../lib/db";
 import { normalizeHostname, shortHostname } from "../../../lib/hostname";
 import {
@@ -104,6 +105,17 @@ export async function POST(request: Request) {
 
       const names = new Set<string>();
       const dnsNames = new Set<string>();
+      const computersByIp = new Map<string, any>();
+      await Promise.all(directoryComputers.map(async (computer: any) => {
+        const dnsHostName = normalizeHostname(computer.dns_host_name);
+        if (!dnsHostName) return;
+        try {
+          const addresses = await dns.resolve4(dnsHostName);
+          for (const address of addresses) computersByIp.set(address, computer);
+        } catch {
+          // Ignore stale/unresolvable DNS records; hostname diagnostics still apply.
+        }
+      }));
       for (const computer of directoryComputers) {
         const name = normalizeHostname(computer.name);
         const dns = normalizeHostname(computer.dns_host_name);
@@ -115,13 +127,14 @@ export async function POST(request: Request) {
       let hostsWithHostname = 0;
       let hostnameMatches = 0;
       let dnsMatches = 0;
+      let ipMatches = 0;
       const unmatchedSamples: string[] = [];
       const matchedSamples: string[] = [];
       const adNameSamples = Array.from(names).slice(0, 10);
       const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       for (const host of inventory) {
-        const candidates = [host.agent_hostname, host.hostname]
+        const candidates = [host.hostname]
           .map(normalizeHostname)
           .filter(Boolean);
         if (!candidates.length) continue;
@@ -129,8 +142,10 @@ export async function POST(request: Request) {
 
         let hostnameMatch = false;
         let dnsMatch = false;
-        let matchedCandidate = "";
+        let ipMatch = computersByIp.has(host.ip);
+        let matchedCandidate = ipMatch ? `${host.ip} -> ${computersByIp.get(host.ip)?.name || ""}` : "";
         for (const candidate of candidates) {
+          if (ipMatch) break;
           if (names.has(shortHostname(candidate))) {
             hostnameMatch = true;
             matchedCandidate = candidate;
@@ -143,9 +158,10 @@ export async function POST(request: Request) {
           }
         }
 
-        if (hostnameMatch || dnsMatch) {
+        if (hostnameMatch || dnsMatch || ipMatch) {
           matchedIps.add(host.ip);
-          if (hostnameMatch) hostnameMatches += 1;
+          if (ipMatch) ipMatches += 1;
+          else if (hostnameMatch) hostnameMatches += 1;
           else dnsMatches += 1;
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else if (unmatchedSamples.length < 10) {
@@ -167,6 +183,7 @@ export async function POST(request: Request) {
         inventoryHostsWithHostname: hostsWithHostname,
         hostnameMatches,
         dnsMatches,
+        ipMatches,
         unmatchedSamples,
         matchedSamples
       });
