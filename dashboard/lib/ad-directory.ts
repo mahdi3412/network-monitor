@@ -148,8 +148,11 @@ foreach ($serverUrl in $servers) {
     } else {
       throw "Unsupported AD operation."
     }
-
-    $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
+    $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
+    $request.DistinguishedName = $baseDn
+    $request.Filter = $filter
+    $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
+    foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
     $request.SizeLimit = 1
     $response = $connection.SendRequest($request)
 
@@ -331,7 +334,11 @@ foreach ($serverUrl in $servers) {
     $users = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
+    $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
+    $request.DistinguishedName = $baseDn
+    $request.Filter = $filter
+    $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
+    foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
       $request.SizeLimit = 1000
       $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
@@ -457,7 +464,11 @@ foreach ($serverUrl in $servers) {
     $computers = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
+    $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
+    $request.DistinguishedName = $baseDn
+    $request.Filter = $filter
+    $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
+    foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
       $request.SizeLimit = 1000
       $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
