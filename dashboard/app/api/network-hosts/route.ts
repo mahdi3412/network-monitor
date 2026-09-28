@@ -20,10 +20,20 @@ export async function GET() {
       du.department AS directory_department,
       du.title AS directory_title,
       du.email AS directory_email,
-      du.user_principal_name AS directory_upn
+      du.user_principal_name AS directory_upn,
+      dc.name AS ad_computer_name,
+      dc.dns_host_name AS ad_dns_host_name,
+      dc.operating_system AS ad_operating_system,
+      dc.operating_system_version AS ad_operating_system_version,
+      dc.description AS ad_computer_description,
+      dc.managed_by AS ad_managed_by,
+      dc.distinguished_name AS ad_computer_dn
     FROM network_hosts nh
     LEFT JOIN clients c ON c.agent_id = nh.agent_id
     LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
+    LEFT JOIN directory_computers dc
+      ON lower(trim(dc.name)) = lower(trim(CASE WHEN instr(nh.hostname,'.') > 0 THEN substr(nh.hostname,1,instr(nh.hostname,'.')-1) ELSE nh.hostname END))
+      OR lower(trim(dc.dns_host_name)) = lower(trim(nh.hostname))
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
 
@@ -52,6 +62,13 @@ export async function GET() {
     if (!current.directory_title && row.directory_title) current.directory_title = row.directory_title;
     if (!current.directory_email && row.directory_email) current.directory_email = row.directory_email;
     if (!current.directory_upn && row.directory_upn) current.directory_upn = row.directory_upn;
+    if (!current.ad_computer_name && row.ad_computer_name) current.ad_computer_name = row.ad_computer_name;
+    if (!current.ad_dns_host_name && row.ad_dns_host_name) current.ad_dns_host_name = row.ad_dns_host_name;
+    if (!current.ad_operating_system && row.ad_operating_system) current.ad_operating_system = row.ad_operating_system;
+    if (!current.ad_operating_system_version && row.ad_operating_system_version) current.ad_operating_system_version = row.ad_operating_system_version;
+    if (!current.ad_computer_description && row.ad_computer_description) current.ad_computer_description = row.ad_computer_description;
+    if (!current.ad_managed_by && row.ad_managed_by) current.ad_managed_by = row.ad_managed_by;
+    if (!current.ad_computer_dn && row.ad_computer_dn) current.ad_computer_dn = row.ad_computer_dn;
     if (!current.mac && row.mac) current.mac = row.mac;
     if (!current.subnet && row.subnet) current.subnet = row.subnet;
     if (!current.device_type && row.device_type) current.device_type = row.device_type;
