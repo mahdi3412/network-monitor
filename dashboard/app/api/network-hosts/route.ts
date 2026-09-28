@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { all, initDb } from "../../../lib/db";
+import { normalizeHostname, shortHostname } from "../../../lib/hostname";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,32 +9,48 @@ export const revalidate = 0;
 export async function GET() {
   await initDb();
 
-  const rows = await all<any>(`
-    WITH inventory AS (
+  const [rows, directoryComputers] = await Promise.all([
+    all<any>(`
       SELECT nh.*, c.hostname AS agent_hostname, c.ip AS agent_ip,
-        trim(lower(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.') AS effective_hostname
-      FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id
-    )
-    SELECT nh.*, nh.agent_hostname, nh.agent_ip,
-      du.personnel_id AS directory_personnel_id, du.display_name AS directory_display_name,
-      du.first_name AS directory_first_name, du.last_name AS directory_last_name,
-      du.department AS directory_department, du.title AS directory_title, du.email AS directory_email,
-      du.user_principal_name AS directory_upn,
-      dc.name AS ad_computer_name, dc.dns_host_name AS ad_dns_host_name,
-      dc.operating_system AS ad_operating_system, dc.operating_system_version AS ad_operating_system_version,
-      dc.description AS ad_computer_description, dc.managed_by AS ad_managed_by,
-      dc.distinguished_name AS ad_computer_dn,
-      CASE WHEN dc.name IS NULL THEN 0 ELSE 1 END AS ad_matched,
-      CASE WHEN dc.name IS NULL THEN NULL
-        WHEN trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(nh.effective_hostname, '.') > 0 THEN substr(nh.effective_hostname, 1, instr(nh.effective_hostname, '.') - 1) ELSE nh.effective_hostname END), '.') THEN 'hostname'
-        ELSE 'dns' END AS ad_match_type
-    FROM inventory nh
-    LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
-    LEFT JOIN directory_computers dc
-      ON trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(nh.effective_hostname, '.') > 0 THEN substr(nh.effective_hostname, 1, instr(nh.effective_hostname, '.') - 1) ELSE nh.effective_hostname END), '.')
-      OR trim(lower(dc.dns_host_name), '.') = nh.effective_hostname
-    ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
-  `);
+        du.personnel_id AS directory_personnel_id, du.display_name AS directory_display_name,
+        du.first_name AS directory_first_name, du.last_name AS directory_last_name,
+        du.department AS directory_department, du.title AS directory_title, du.email AS directory_email,
+        du.user_principal_name AS directory_upn
+      FROM network_hosts nh
+      LEFT JOIN clients c ON c.agent_id = nh.agent_id
+      LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
+      ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
+    `),
+    all<any>("SELECT name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name FROM directory_computers")
+  ]);
+
+  const computersByName = new Map<string, any>();
+  const computersByDns = new Map<string, any>();
+
+  for (const computer of directoryComputers) {
+    const name = normalizeHostname(computer.name);
+    const dns = normalizeHostname(computer.dns_host_name);
+    if (name) computersByName.set(name, computer);
+    if (dns) computersByDns.set(dns, computer);
+  }
+
+  for (const row of rows) {
+    const effectiveHostname = normalizeHostname(row.hostname || row.agent_hostname);
+    const shortName = shortHostname(effectiveHostname);
+    const computer = computersByName.get(shortName) || computersByDns.get(effectiveHostname);
+    row.ad_computer_name = computer?.name || null;
+    row.ad_dns_host_name = computer?.dns_host_name || null;
+    row.ad_operating_system = computer?.operating_system || null;
+    row.ad_operating_system_version = computer?.operating_system_version || null;
+    row.ad_computer_description = computer?.description || null;
+    row.ad_managed_by = computer?.managed_by || null;
+    row.ad_computer_dn = computer?.distinguished_name || null;
+    row.ad_matched = computer ? 1 : 0;
+    row.ad_match_type = computer
+      ? computersByName.get(shortName) ? "hostname" : "dns"
+      : null;
+  }
+
   const now = Date.now();
   const merged = new Map<string, any>();
 
