@@ -476,7 +476,7 @@ foreach ($serverUrl in $servers) {
     $request.Filter = $filter
     $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
     foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
-      $request.SizeLimit = 1000
+      $request.SizeLimit = 0
       $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
