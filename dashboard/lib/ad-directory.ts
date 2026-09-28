@@ -149,7 +149,7 @@ foreach ($serverUrl in $servers) {
       throw "Unsupported AD operation."
     }
 
-    $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
+    $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
     $request.SizeLimit = 1
     $response = $connection.SendRequest($request)
 
@@ -331,9 +331,9 @@ foreach ($serverUrl in $servers) {
     $users = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
+      $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
       $request.SizeLimit = 1000
-      $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
+      $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
       $response = $connection.SendRequest($request)
@@ -457,9 +457,9 @@ foreach ($serverUrl in $servers) {
     $computers = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
+      $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,[string[]]$properties)
       $request.SizeLimit = 1000
-      $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
+      $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
       $response = $connection.SendRequest($request)
