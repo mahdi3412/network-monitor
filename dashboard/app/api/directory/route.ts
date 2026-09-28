@@ -182,6 +182,7 @@ export async function POST(request: Request) {
         const subnetKey = String(host.subnet || "بدون subnet");
         const subnetStats = inventoryBySubnet.get(subnetKey) || { total: 0, ipMatches: 0, withHostname: 0 };
         subnetStats.total += 1;
+
         const deviceTypeKey = String(host.device_type || "unknown");
         const deviceStats = inventoryByDeviceType.get(deviceTypeKey) || { total: 0, ipMatches: 0 };
         deviceStats.total += 1;
@@ -189,14 +190,19 @@ export async function POST(request: Request) {
         const candidates = [host.hostname]
           .map(normalizeHostname)
           .filter(Boolean);
-        if (!candidates.length) continue;
-        hostsWithHostname += 1;
-        subnetStats.withHostname += 1;
 
+        if (candidates.length) {
+          hostsWithHostname += 1;
+          subnetStats.withHostname += 1;
+        }
+
+        // IP matching must not depend on reverse-DNS/NBT hostname availability.
+        // A host can be an AD computer even when its inventory hostname is empty.
+        const ipMatch = computersByIp.has(host.ip);
         let hostnameMatch = false;
         let dnsMatch = false;
-        let ipMatch = computersByIp.has(host.ip);
         let matchedCandidate = ipMatch ? `${host.ip} -> ${computersByIp.get(host.ip)?.name || ""}` : "";
+
         for (const candidate of candidates) {
           if (ipMatch) break;
           if (names.has(shortHostname(candidate))) {
@@ -217,8 +223,11 @@ export async function POST(request: Request) {
             ipMatches += 1;
             subnetStats.ipMatches += 1;
             deviceStats.ipMatches += 1;
-          } else if (hostnameMatch) hostnameMatches += 1;
-          else dnsMatches += 1;
+          } else if (hostnameMatch) {
+            hostnameMatches += 1;
+          } else {
+            dnsMatches += 1;
+          }
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
           inventoryIpUnmatched += 1;
