@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import dns from "node:dns/promises";
 import { all, initDb } from "../../../lib/db";
 import { normalizeHostname, shortHostname } from "../../../lib/hostname";
 
@@ -26,6 +27,18 @@ export async function GET() {
 
   const computersByName = new Map<string, any>();
   const computersByDns = new Map<string, any>();
+  const computersByIp = new Map<string, any>();
+
+  await Promise.all(directoryComputers.map(async (computer) => {
+    const dnsHostName = normalizeHostname(computer.dns_host_name);
+    if (!dnsHostName) return;
+    try {
+      const addresses = await dns.resolve4(dnsHostName);
+      for (const address of addresses) computersByIp.set(address, computer);
+    } catch {
+      // DNS resolution can fail for stale or unreachable AD records; hostname matching remains available.
+    }
+  }));
 
   for (const computer of directoryComputers) {
     const name = normalizeHostname(computer.name);
@@ -35,13 +48,14 @@ export async function GET() {
   }
 
   for (const row of rows) {
-    const hostnameCandidates = [row.agent_hostname, row.hostname]
+    const hostnameCandidates = [row.hostname]
       .map(normalizeHostname)
       .filter(Boolean);
-    let computer: any = null;
-    let matchType: string | null = null;
+    let computer: any = computersByIp.get(row.ip) || null;
+    let matchType: string | null = computer ? "ip" : null;
 
     for (const candidate of hostnameCandidates) {
+      if (computer) break;
       const shortName = shortHostname(candidate);
       computer = computersByName.get(shortName) || computersByDns.get(candidate);
       if (computer) {
