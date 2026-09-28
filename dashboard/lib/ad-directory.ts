@@ -113,14 +113,14 @@ foreach ($serverUrl in $servers) {
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
     $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
 
-    $identifier = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapDirectoryIdentifier], [object[]]@($server,[int]$port,$true,$false))
+    $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
     if ($authMode -eq "integrated") {
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier))
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
       $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
     } else {
-      $credential = [Activator]::CreateInstance([System.Net.NetworkCredential], [object[]]@([string]$bindUser,[string]$bindPassword))
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate))
+      $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
     }
 
     $connection.SessionOptions.ProtocolVersion = 3
@@ -128,7 +128,7 @@ foreach ($serverUrl in $servers) {
     $connection.Bind()
 
     if ($operation -eq "test") {
-      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,"(objectClass=*)",[System.DirectoryServices.Protocols.SearchScope]::Base,"defaultNamingContext")
+      $request = [System.DirectoryServices.Protocols.SearchRequest]::new($baseDn,"(objectClass=*)",[System.DirectoryServices.Protocols.SearchScope]::Base,"defaultNamingContext")
       $response = $connection.SendRequest($request)
       if ($response.Entries.Count -gt 0) {
         [PSCustomObject]@{ ok = $true; type = "connection"; server = $server; port = $port; ssl = $useSsl; auth = "Negotiate" } | ConvertTo-Json -Compress
@@ -315,14 +315,14 @@ foreach ($serverUrl in $servers) {
     $server = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
     $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
-    $identifier = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapDirectoryIdentifier], [object[]]@($server,[int]$port,$true,$false))
+    $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
     if ($authMode -eq "integrated") {
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier))
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
       $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
     } else {
-      $credential = [Activator]::CreateInstance([System.Net.NetworkCredential], [object[]]@([string]$bindUser,[string]$bindPassword))
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate))
+      $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
     }
 
     $connection.SessionOptions.ProtocolVersion = 3
@@ -446,14 +446,14 @@ foreach ($serverUrl in $servers) {
     $server = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
     $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
-    $identifier = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapDirectoryIdentifier], [object[]]@($server,[int]$port,$true,$false))
+    $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
     if ($authMode -eq "integrated") {
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier))
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
       $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
     } else {
-      $credential = [Activator]::CreateInstance([System.Net.NetworkCredential], [object[]]@([string]$bindUser,[string]$bindPassword))
-      $connection = [Activator]::CreateInstance([System.DirectoryServices.Protocols.LdapConnection], [object[]]@($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate))
+      $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
     }
     $connection.SessionOptions.ProtocolVersion = 3
     if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
