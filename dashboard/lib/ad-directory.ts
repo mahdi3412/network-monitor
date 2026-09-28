@@ -279,3 +279,134 @@ export async function lookupAdComputer(computerName: string): Promise<AdComputer
     distinguishedName: String(result.distinguishedName || "")
   };
 }
+export async function syncAdUsers() {
+  const config = getAdConfig();
+
+  if (process.platform !== "win32") throw new Error("Active Directory integration currently requires a Windows server.");
+  if (!config.ready) throw new Error("Active Directory is not fully configured.");
+
+  const script = String.raw`
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.DirectoryServices.Protocols
+
+function First-AttributeValue($Entry, [string]$Name) {
+  if ($null -ne $Entry.Attributes -and $Entry.Attributes.Contains($Name) -and $Entry.Attributes[$Name].Count -gt 0) {
+    return [string]$Entry.Attributes[$Name][0]
+  }
+  return ""
+}
+
+$serversRaw = $env:NETWORK_MONITOR_AD_SERVERS
+$baseDn = $env:NETWORK_MONITOR_AD_BASE_DN
+$bindUser = $env:NETWORK_MONITOR_AD_USER
+$bindPassword = $env:NETWORK_MONITOR_AD_PASSWORD
+$authMode = $env:NETWORK_MONITOR_AD_AUTH_MODE
+$ssl = $env:NETWORK_MONITOR_AD_SSL -eq "1"
+$servers = @($serversRaw -split "\|" | Where-Object { $_ -and $_.Trim() })
+$properties = @("sAMAccountName","userPrincipalName","displayName","givenName","sn","department","title","mail","distinguishedName","employeeID","employeeNumber")
+
+foreach ($serverUrl in $servers) {
+  $connection = $null
+  try {
+    $uri = [Uri]$serverUrl
+    $server = $uri.Host
+    $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
+    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
+    $identifier = New-Object System.DirectoryServices.Protocols.LdapDirectoryIdentifier($server,$port,$true,$false)
+
+    if ($authMode -eq "integrated") {
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier)
+      $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+    } else {
+      $credential = New-Object System.Net.NetworkCredential($bindUser,$bindPassword)
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+    }
+
+    $connection.SessionOptions.ProtocolVersion = 3
+    if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
+    $connection.Bind()
+
+    $filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=*))"
+    $cookie = New-Object byte[] 0
+    $users = New-Object System.Collections.Generic.List[object]
+
+    do {
+      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+      $request.SizeLimit = 1000
+      $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
+      if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
+      [void]$request.Controls.Add($page)
+      $response = $connection.SendRequest($request)
+
+      foreach ($entry in $response.Entries) {
+        $username = First-AttributeValue $entry "sAMAccountName"
+        if (-not $username) { continue }
+        $users.Add([PSCustomObject]@{
+          personnelId = $(First-AttributeValue $entry "employeeID");
+          employeeNumber = $(First-AttributeValue $entry "employeeNumber");
+          username = $username;
+          userPrincipalName = $(First-AttributeValue $entry "userPrincipalName");
+          displayName = $(First-AttributeValue $entry "displayName");
+          firstName = $(First-AttributeValue $entry "givenName");
+          lastName = $(First-AttributeValue $entry "sn");
+          department = $(First-AttributeValue $entry "department");
+          title = $(First-AttributeValue $entry "title");
+          email = $(First-AttributeValue $entry "mail");
+          distinguishedName = $(First-AttributeValue $entry "distinguishedName")
+        })
+      }
+
+      $pageResponse = $response.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] } | Select-Object -First 1
+      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { New-Object byte[] 0 }
+    } while ($cookie.Length -gt 0)
+
+    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; users = @($users) } | ConvertTo-Json -Compress -Depth 6
+    exit
+  } catch {
+    $detail = $_.Exception
+    $ldap = $_.Exception.InnerException
+    [Console]::Error.WriteLine(("server={0};type={1};message={2};errorCode={3};serverErrorMessage={4}" -f $serverUrl,$detail.GetType().FullName,$detail.Message,
+      $(if ($detail.PSObject.Properties["ErrorCode"]) { $detail.ErrorCode } elseif ($ldap -and $ldap.PSObject.Properties["ErrorCode"]) { $ldap.ErrorCode } else { "" }),
+      $(if ($detail.PSObject.Properties["ServerErrorMessage"]) { $detail.ServerErrorMessage } elseif ($ldap -and $ldap.PSObject.Properties["ServerErrorMessage"]) { $ldap.ServerErrorMessage } else { "" })
+    ))
+  } finally {
+    if ($null -ne $connection) { $connection.Dispose() }
+  }
+}
+
+throw "All configured Active Directory servers failed."
+`;
+
+  const env = {
+    ...process.env,
+    NETWORK_MONITOR_AD_SERVERS: config.urls.join("|"),
+    NETWORK_MONITOR_AD_BASE_DN: config.baseDn,
+    NETWORK_MONITOR_AD_USER: config.username,
+    NETWORK_MONITOR_AD_PASSWORD: process.env.AD_BIND_PASSWORD || "",
+    NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
+    NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0"
+  };
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "network-monitor-ad-sync-"));
+  const scriptPath = path.join(tempDir, "sync-users.ps1");
+
+  try {
+    await fs.promises.writeFile(scriptPath, script, "utf8");
+    try {
+      const { stdout, stderr } = await execFileAsync("powershell.exe", ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",scriptPath], { windowsHide: true, timeout: 120000, env });
+      const output = String(stdout || "").trim();
+      if (!output) {
+        const detail = String(stderr || "").trim();
+        throw new Error(detail || "Active Directory returned an empty response.");
+      }
+      const parsed = JSON.parse(output);
+      return Array.isArray(parsed?.users) ? parsed.users : [];
+    } catch (error: any) {
+      const stderr = String(error?.stderr || "").trim();
+      const message = String(error?.message || error);
+      throw new Error(stderr ? message + "\n" + stderr : message);
+    }
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
