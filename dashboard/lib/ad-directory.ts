@@ -199,7 +199,7 @@ foreach ($serverUrl in $servers) {
   } catch {
     $detail = $_.Exception
     $ldap = $_.Exception.InnerException
-    [Console]::Error.WriteLine(("server={0};type={1};message={2};errorCode={3};serverErrorMessage={4}" -f $serverUrl,$detail.GetType().FullName,$detail.Message,
+    [Console]::Error.WriteLine(("server={0};line={1};position={2};type={3};message={4};errorCode={5};serverErrorMessage={6}" -f $serverUrl,$_.InvocationInfo.ScriptLineNumber,$_.InvocationInfo.PositionMessage,$detail.GetType().FullName,$detail.Message,
       $(if ($detail.PSObject.Properties["ErrorCode"]) { $detail.ErrorCode } elseif ($ldap -and $ldap.PSObject.Properties["ErrorCode"]) { $ldap.ErrorCode } else { "" }),
       $(if ($detail.PSObject.Properties["ServerErrorMessage"]) { $detail.ServerErrorMessage } elseif ($ldap -and $ldap.PSObject.Properties["ServerErrorMessage"]) { $ldap.ServerErrorMessage } else { "" })
     ))
@@ -330,8 +330,8 @@ foreach ($serverUrl in $servers) {
     $connection.Bind()
 
     $filter = "(&(objectCategory=person)(objectClass=user)(sAMAccountName=*))"
-    $cookie = New-Object byte[] 0
-    $users = New-Object System.Collections.Generic.List[object]
+    $cookie = [byte[]]::new(0)
+    $users = [System.Collections.Generic.List[object]]::new()
 
     do {
     $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
@@ -340,7 +340,7 @@ foreach ($serverUrl in $servers) {
     $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
     foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
       $request.SizeLimit = 1000
-      $page = [Activator]::CreateInstance([System.DirectoryServices.Protocols.PageResultRequestControl], [object[]]@([int]500))
+      $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
       $response = $connection.SendRequest($request)
@@ -364,7 +364,7 @@ foreach ($serverUrl in $servers) {
       }
 
       $pageResponse = $response.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] } | Select-Object -First 1
-      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { New-Object byte[] 0 }
+      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { [byte[]]::new(0) }
     } while ($cookie.Length -gt 0)
 
     [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; users = @($users) } | ConvertTo-Json -Compress -Depth 6
@@ -460,8 +460,8 @@ foreach ($serverUrl in $servers) {
     $connection.Bind()
 
     $filter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
-    $cookie = New-Object byte[] 0
-    $computers = New-Object System.Collections.Generic.List[object]
+    $cookie = [byte[]]::new(0)
+    $computers = [System.Collections.Generic.List[object]]::new()
 
     do {
     $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
@@ -470,7 +470,7 @@ foreach ($serverUrl in $servers) {
     $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
     foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
       $request.SizeLimit = 1000
-      $page = [Activator]::CreateInstance([System.DirectoryServices.Protocols.PageResultRequestControl], [object[]]@([int]500))
+      $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
       [void]$request.Controls.Add($page)
       $response = $connection.SendRequest($request)
@@ -490,7 +490,7 @@ foreach ($serverUrl in $servers) {
         })
       }
       $pageResponse = $response.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] } | Select-Object -First 1
-      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { New-Object byte[] 0 }
+      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { [byte[]]::new(0) }
     } while ($cookie.Length -gt 0)
 
     [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($computers) } | ConvertTo-Json -Compress -Depth 6
