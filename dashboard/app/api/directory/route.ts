@@ -4,6 +4,7 @@ import {
   getAdConfig,
   lookupAdComputer,
   lookupAdUserByPersonnel,
+  syncAdComputers,
   syncAdUsers,
   testAdConnection
 } from "../../../lib/ad-directory";
@@ -67,6 +68,32 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
+
+    if (body?.action === "sync-computers") {
+      const computers = await syncAdComputers();
+      await initDb();
+
+      for (const computer of computers) {
+        const name = String(computer?.name || computer?.dnsHostName || "").trim();
+        if (!name) continue;
+
+        await run(
+          "INSERT INTO directory_computers(name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
+          [
+            name,
+            String(computer?.dnsHostName || ""),
+            String(computer?.operatingSystem || ""),
+            String(computer?.operatingSystemVersion || ""),
+            String(computer?.description || ""),
+            String(computer?.managedBy || ""),
+            String(computer?.distinguishedName || ""),
+            new Date().toISOString()
+          ]
+        );
+      }
+
+      return json({ ok: true, synced: computers.length });
+    }
 
     if (body?.action === "sync-users") {
       const users = await syncAdUsers();
