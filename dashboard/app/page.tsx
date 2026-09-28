@@ -50,6 +50,13 @@ type NetworkHost = {
   directory_title?: string;
   directory_email?: string;
   directory_upn?: string;
+  ad_computer_name?: string;
+  ad_dns_host_name?: string;
+  ad_operating_system?: string;
+  ad_operating_system_version?: string;
+  ad_computer_description?: string;
+  ad_managed_by?: string;
+  ad_computer_dn?: string;
   status: "online" | "recent" | "offline";
 };
 
@@ -94,6 +101,7 @@ export default function Home() {
   const [adConfig, setAdConfig] = useState<any>(null);
   const [adTesting, setAdTesting] = useState(false);
   const [adSyncing, setAdSyncing] = useState(false);
+  const [adComputerSyncing, setAdComputerSyncing] = useState(false);
   const [adMessage, setAdMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -168,7 +176,12 @@ export default function Home() {
         h.directory_personnel_id,
         h.directory_display_name,
         h.directory_department,
-        h.directory_title
+        h.directory_title,
+        h.ad_computer_name,
+        h.ad_dns_host_name,
+        h.ad_operating_system,
+        h.ad_computer_description,
+        h.ad_managed_by
       ].join(" ").toLowerCase();
 
       return (
@@ -248,6 +261,31 @@ export default function Home() {
       setAdMessage("امکان تست Active Directory وجود ندارد.");
     } finally {
       setAdTesting(false);
+    }
+  }
+
+  async function syncActiveDirectoryComputers() {
+    setAdComputerSyncing(true);
+    setAdMessage("");
+
+    try {
+      const response = await fetch("/api/directory", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sync-computers" })
+      });
+      const data = await response.json();
+
+      if (response.ok && data?.ok) {
+        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم`);
+        await load();
+      } else {
+        setAdMessage(data?.error || "همگام‌سازی کامپیوترهای AD ناموفق بود.");
+      }
+    } catch {
+      setAdMessage("ارتباط با سرور برای همگام‌سازی کامپیوترهای AD برقرار نشد.");
+    } finally {
+      setAdComputerSyncing(false);
     }
   }
 
@@ -402,6 +440,9 @@ export default function Home() {
                 <button className="refresh" onClick={syncActiveDirectoryUsers} disabled={adSyncing || !adConfig?.ready}>
                   {adSyncing ? "در حال همگام‌سازی..." : "همگام‌سازی کاربران AD"}
                 </button>
+                <button className="refresh" onClick={syncActiveDirectoryComputers} disabled={adComputerSyncing || !adConfig?.ready}>
+                  {adComputerSyncing ? "در حال همگام‌سازی..." : "همگام‌سازی کامپیوترهای AD"}
+                </button>
               </div>
               {adMessage && <span className="muted">{adMessage}</span>}
             </div>
@@ -479,7 +520,7 @@ export default function Home() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>MAC</th><th>Subnet</th>
+                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>AD OS</th><th>AD DNS</th><th>MAC</th><th>Subnet</th>
                     <th>نوع</th><th>Services</th><th>روش</th><th>Latency</th><th>Agent</th><th>اولین مشاهده</th><th>آخرین مشاهده</th>
                   </tr>
                 </thead>
@@ -493,6 +534,8 @@ export default function Home() {
                       <td>{h.directory_display_name || "-"}</td>
                       <td>{h.directory_personnel_id || "-"}</td>
                       <td>{h.directory_department || "-"}</td>
+                      <td>{h.ad_operating_system || "-"}</td>
+                      <td>{h.ad_dns_host_name || "-"}</td>
                       <td>{h.mac || "-"}</td>
                       <td>{h.subnet || "-"}</td>
                       <td>{h.device_type || "unknown"}</td>
