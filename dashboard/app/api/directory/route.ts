@@ -92,7 +92,23 @@ export async function POST(request: Request) {
         );
       }
 
-      return json({ ok: true, synced: computers.length });
+      const matchedInventory = await all<any>(`
+        SELECT COUNT(DISTINCT nh.ip) AS count
+        FROM network_hosts nh
+        INNER JOIN directory_computers dc
+          ON lower(trim(dc.name)) = lower(trim(CASE
+            WHEN instr(nh.hostname, '.') > 0
+              THEN substr(nh.hostname, 1, instr(nh.hostname, '.') - 1)
+            ELSE nh.hostname
+          END))
+          OR lower(trim(dc.dns_host_name)) = lower(trim(nh.hostname))
+      `);
+
+      return json({
+        ok: true,
+        synced: computers.length,
+        matchedInventory: Number(matchedInventory[0]?.count || 0)
+      });
     }
 
     if (body?.action === "sync-users") {
