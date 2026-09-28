@@ -279,7 +279,7 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok && data?.ok) {
-        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم · Inventory: ${data.inventoryHosts ?? 0} · دارای نام: ${data.inventoryHostsWithHostname ?? 0} · تطبیق نام: ${data.hostnameMatches ?? 0} · تطبیق DNS: ${data.dnsMatches ?? 0}`);
+        setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · Inventory: ${data.inventoryHosts ?? 0} · دارای نام: ${data.inventoryHostsWithHostname ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · نمونه Inventory: ${(data.unmatchedSamples || []).slice(0, 3).join(", ") || "-"}`);
         await load();
       } else {
         setAdMessage(data?.error || "همگام‌سازی کامپیوترهای AD ناموفق بود.");
