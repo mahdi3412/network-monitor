@@ -12,9 +12,18 @@ export async function GET() {
     SELECT
       nh.*,
       c.hostname AS agent_hostname,
-      c.ip AS agent_ip
+      c.ip AS agent_ip,
+      du.personnel_id AS directory_personnel_id,
+      du.display_name AS directory_display_name,
+      du.first_name AS directory_first_name,
+      du.last_name AS directory_last_name,
+      du.department AS directory_department,
+      du.title AS directory_title,
+      du.email AS directory_email,
+      du.user_principal_name AS directory_upn
     FROM network_hosts nh
     LEFT JOIN clients c ON c.agent_id = nh.agent_id
+    LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
 
@@ -35,6 +44,14 @@ export async function GET() {
 
     if (!current.hostname && row.hostname) current.hostname = row.hostname;
     if (!current.username && row.username) current.username = row.username;
+    if (!current.directory_personnel_id && row.directory_personnel_id) current.directory_personnel_id = row.directory_personnel_id;
+    if (!current.directory_display_name && row.directory_display_name) current.directory_display_name = row.directory_display_name;
+    if (!current.directory_first_name && row.directory_first_name) current.directory_first_name = row.directory_first_name;
+    if (!current.directory_last_name && row.directory_last_name) current.directory_last_name = row.directory_last_name;
+    if (!current.directory_department && row.directory_department) current.directory_department = row.directory_department;
+    if (!current.directory_title && row.directory_title) current.directory_title = row.directory_title;
+    if (!current.directory_email && row.directory_email) current.directory_email = row.directory_email;
+    if (!current.directory_upn && row.directory_upn) current.directory_upn = row.directory_upn;
     if (!current.mac && row.mac) current.mac = row.mac;
     if (!current.subnet && row.subnet) current.subnet = row.subnet;
     if (!current.device_type && row.device_type) current.device_type = row.device_type;
