@@ -149,7 +149,7 @@ foreach ($serverUrl in $servers) {
       throw "Unsupported AD operation."
     }
 
-    $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+    $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
     $request.SizeLimit = 1
     $response = $connection.SendRequest($request)
 
@@ -331,7 +331,7 @@ foreach ($serverUrl in $servers) {
     $users = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
       $request.SizeLimit = 1000
       $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
@@ -457,7 +457,7 @@ foreach ($serverUrl in $servers) {
     $computers = New-Object System.Collections.Generic.List[object]
 
     do {
-      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,(,$properties))
       $request.SizeLimit = 1000
       $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
       if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
