@@ -26,6 +26,24 @@ export function run(sql: string, params: any[] = []): Promise<void> {
   });
 }
 
+export function transaction(statements: Array<{ sql: string; params?: any[] }>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run("BEGIN TRANSACTION", (beginError) => {
+        if (beginError) return reject(beginError);
+        for (const statement of statements) {
+          db.run(statement.sql, statement.params || [], (error) => {
+            if (error) {
+              db.run("ROLLBACK", () => reject(error));
+            }
+          });
+        }
+        db.run("COMMIT", (commitError) => commitError ? reject(commitError) : resolve());
+      });
+    });
+  });
+}
+
 export function runWithId(sql: string, params: any[] = []): Promise<number> {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (e) {
