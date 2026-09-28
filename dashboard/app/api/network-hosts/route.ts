@@ -32,8 +32,12 @@ export async function GET() {
     LEFT JOIN clients c ON c.agent_id = nh.agent_id
     LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
     LEFT JOIN directory_computers dc
-      ON lower(trim(dc.name)) = lower(trim(CASE WHEN instr(nh.hostname,'.') > 0 THEN substr(nh.hostname,1,instr(nh.hostname,'.')-1) ELSE nh.hostname END))
-      OR lower(trim(dc.dns_host_name)) = lower(trim(nh.hostname))
+      ON lower(trim(dc.name)) = lower(trim(CASE
+        WHEN instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.') > 0
+          THEN substr(COALESCE(NULLIF(nh.hostname,''), c.hostname),1,instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.')-1)
+        ELSE COALESCE(NULLIF(nh.hostname,''), c.hostname)
+      END))
+      OR lower(trim(dc.dns_host_name)) = lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)))
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
 
