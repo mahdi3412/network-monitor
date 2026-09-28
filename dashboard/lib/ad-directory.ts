@@ -410,3 +410,116 @@ throw "All configured Active Directory servers failed."
     await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
 }
+export async function syncAdComputers() {
+  const config = getAdConfig();
+  if (process.platform !== "win32") throw new Error("Active Directory integration currently requires a Windows server.");
+  if (!config.ready) throw new Error("Active Directory is not fully configured.");
+
+  const script = String.raw`
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.DirectoryServices.Protocols
+
+function First-AttributeValue($Entry, [string]$Name) {
+  if ($null -ne $Entry.Attributes -and $Entry.Attributes.Contains($Name) -and $Entry.Attributes[$Name].Count -gt 0) { return [string]$Entry.Attributes[$Name][0] }
+  return ""
+}
+
+$servers = @($env:NETWORK_MONITOR_AD_SERVERS -split "\|" | Where-Object { $_ -and $_.Trim() })
+$baseDn = $env:NETWORK_MONITOR_AD_BASE_DN
+$bindUser = $env:NETWORK_MONITOR_AD_USER
+$bindPassword = $env:NETWORK_MONITOR_AD_PASSWORD
+$authMode = $env:NETWORK_MONITOR_AD_AUTH_MODE
+$ssl = $env:NETWORK_MONITOR_AD_SSL -eq "1"
+$properties = @("name","dNSHostName","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
+
+foreach ($serverUrl in $servers) {
+  $connection = $null
+  try {
+    $uri = [Uri]$serverUrl
+    $server = $uri.Host
+    $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
+    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
+    $identifier = New-Object System.DirectoryServices.Protocols.LdapDirectoryIdentifier($server,$port,$true,$false)
+
+    if ($authMode -eq "integrated") {
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier)
+      $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+    } else {
+      $credential = New-Object System.Net.NetworkCredential($bindUser,$bindPassword)
+      $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+    }
+    $connection.SessionOptions.ProtocolVersion = 3
+    if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
+    $connection.Bind()
+
+    $filter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
+    $cookie = New-Object byte[] 0
+    $computers = New-Object System.Collections.Generic.List[object]
+
+    do {
+      $request = New-Object System.DirectoryServices.Protocols.SearchRequest($baseDn,$filter,[System.DirectoryServices.Protocols.SearchScope]::Subtree,$properties)
+      $request.SizeLimit = 1000
+      $page = New-Object System.DirectoryServices.Protocols.PageResultRequestControl(500)
+      if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
+      [void]$request.Controls.Add($page)
+      $response = $connection.SendRequest($request)
+
+      foreach ($entry in $response.Entries) {
+        $name = First-AttributeValue $entry "name"
+        $dns = First-AttributeValue $entry "dNSHostName"
+        if (-not $name -and -not $dns) { continue }
+        $computers.Add([PSCustomObject]@{
+          name = $name;
+          dnsHostName = $dns;
+          operatingSystem = First-AttributeValue $entry "operatingSystem";
+          operatingSystemVersion = First-AttributeValue $entry "operatingSystemVersion";
+          description = First-AttributeValue $entry "description";
+          managedBy = First-AttributeValue $entry "managedBy";
+          distinguishedName = First-AttributeValue $entry "distinguishedName"
+        })
+      }
+      $pageResponse = $response.Controls | Where-Object { $_ -is [System.DirectoryServices.Protocols.PageResultResponseControl] } | Select-Object -First 1
+      $cookie = if ($pageResponse) { $pageResponse.Cookie } else { New-Object byte[] 0 }
+    } while ($cookie.Length -gt 0)
+
+    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($computers) } | ConvertTo-Json -Compress -Depth 6
+    exit
+  } catch {
+    $detail = $_.Exception; $ldap = $_.Exception.InnerException
+    [Console]::Error.WriteLine(("server={0};type={1};message={2};errorCode={3};serverErrorMessage={4}" -f $serverUrl,$detail.GetType().FullName,$detail.Message,
+      $(if ($detail.PSObject.Properties["ErrorCode"]) { $detail.ErrorCode } elseif ($ldap -and $ldap.PSObject.Properties["ErrorCode"]) { $ldap.ErrorCode } else { "" }),
+      $(if ($detail.PSObject.Properties["ServerErrorMessage"]) { $detail.ServerErrorMessage } elseif ($ldap -and $ldap.PSObject.Properties["ServerErrorMessage"]) { $ldap.ServerErrorMessage } else { "" })
+    ))
+  } finally { if ($null -ne $connection) { $connection.Dispose() } }
+}
+
+throw "All configured Active Directory servers failed."
+`;
+
+  const env = {
+    ...process.env,
+    NETWORK_MONITOR_AD_SERVERS: config.urls.join("|"),
+    NETWORK_MONITOR_AD_BASE_DN: config.baseDn,
+    NETWORK_MONITOR_AD_USER: config.username,
+    NETWORK_MONITOR_AD_PASSWORD: process.env.AD_BIND_PASSWORD || "",
+    NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
+    NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0"
+  };
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "network-monitor-ad-computers-"));
+  const scriptPath = path.join(tempDir, "sync-computers.ps1");
+  try {
+    await fs.promises.writeFile(scriptPath, script, "utf8");
+    const { stdout, stderr } = await execFileAsync("powershell.exe", ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",scriptPath], { windowsHide: true, timeout: 120000, env });
+    const output = String(stdout || "").trim();
+    if (!output) throw new Error(String(stderr || "").trim() || "Active Directory returned an empty response.");
+    const parsed = JSON.parse(output);
+    return Array.isArray(parsed?.computers) ? parsed.computers : [];
+  } catch (error: any) {
+    const stderr = String(error?.stderr || "").trim();
+    const message = String(error?.message || error);
+    throw new Error(stderr ? message + "\n" + stderr : message);
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
