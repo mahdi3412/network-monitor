@@ -143,6 +143,8 @@ export async function POST(request: Request) {
         persistedComputers: statements.length,
         directoryComputerRows: directoryComputers.length,
         rawComputerSamples,
+        adNameSamples,
+        adDnsSamples,
         matchedInventory: matchedIps.size,
         inventoryHosts: inventory.length,
         inventoryHostsWithHostname: hostsWithHostname,
