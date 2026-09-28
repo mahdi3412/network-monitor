@@ -121,19 +121,36 @@ export async function POST(request: Request) {
       const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       for (const host of inventory) {
-        const effectiveHostname = normalizeHostname(host.hostname || host.agent_hostname);
-        if (!effectiveHostname) continue;
+        const candidates = [host.agent_hostname, host.hostname]
+          .map(normalizeHostname)
+          .filter(Boolean);
+        if (!candidates.length) continue;
         hostsWithHostname += 1;
 
-        const hostnameMatch = names.has(shortHostname(effectiveHostname));
-        const dnsMatch = dnsNames.has(effectiveHostname);
+        let hostnameMatch = false;
+        let dnsMatch = false;
+        let matchedCandidate = "";
+        for (const candidate of candidates) {
+          if (names.has(shortHostname(candidate))) {
+            hostnameMatch = true;
+            matchedCandidate = candidate;
+            break;
+          }
+          if (dnsNames.has(candidate)) {
+            dnsMatch = true;
+            matchedCandidate = candidate;
+            break;
+          }
+        }
+
         if (hostnameMatch || dnsMatch) {
           matchedIps.add(host.ip);
           if (hostnameMatch) hostnameMatches += 1;
-          else if (dnsMatch) dnsMatches += 1;
-          if (matchedSamples.length < 5) matchedSamples.push(effectiveHostname);
-        } else if (unmatchedSamples.length < 10 && !unmatchedSamples.includes(effectiveHostname)) {
-          unmatchedSamples.push(effectiveHostname);
+          else dnsMatches += 1;
+          if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
+        } else if (unmatchedSamples.length < 10) {
+          const sample = candidates.join(" / ");
+          if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
         }
       }
 
