@@ -277,7 +277,7 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok && data?.ok) {
-        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم`);
+        setAdMessage(`همگام‌سازی کامپیوترهای AD انجام شد: ${data.synced} سیستم · اتصال به Inventory: ${data.matchedInventory ?? 0}`);
         await load();
       } else {
         setAdMessage(data?.error || "همگام‌سازی کامپیوترهای AD ناموفق بود.");
