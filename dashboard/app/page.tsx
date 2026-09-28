@@ -547,7 +547,7 @@ export default function Home() {
                       <td>{faDate(h.last_seen)}</td>
                     </tr>
                   ))}
-                  {!filteredHosts.length && <tr><td colSpan={13} className="muted">در این فیلتر نتیجه‌ای پیدا نشد.</td></tr>}
+                  {!filteredHosts.length && <tr><td colSpan={18} className="muted">در این فیلتر نتیجه‌ای پیدا نشد.</td></tr>}
                 </tbody>
               </table>
             </div>
