@@ -11,7 +11,7 @@ export async function GET() {
   const rows = await all<any>(`
     WITH inventory AS (
       SELECT nh.*, c.hostname AS agent_hostname, c.ip AS agent_ip,
-        trim(lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.')) AS effective_hostname
+        trim(lower(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.') AS effective_hostname
       FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id
     )
     SELECT nh.*, nh.agent_hostname, nh.agent_ip,
