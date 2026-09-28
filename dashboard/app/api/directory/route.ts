@@ -106,15 +106,57 @@ export async function POST(request: Request) {
       const names = new Set<string>();
       const dnsNames = new Set<string>();
       const computersByIp = new Map<string, any>();
+      const adDnsResolver = new dns.Resolver();
+      let adDnsServer = "";
+      let adDnsServerResolved = false;
+      try {
+        const config = getAdConfig();
+        const serverAddresses = config.server ? await dns.resolve4(config.server) : [];
+        adDnsServer = serverAddresses[0] || "";
+        if (adDnsServer) {
+          adDnsResolver.setServers([adDnsServer]);
+          adDnsServerResolved = true;
+        }
+      } catch {
+        // Keep the system resolver as a fallback when the AD server address cannot be resolved.
+      }
+
+      let adDnsWithName = 0;
+      let adDnsSystemResolved = 0;
+      let adDnsDirectResolved = 0;
+      let adDnsUnresolved = 0;
+      const adDnsResolutionSamples: string[] = [];
+
       await Promise.all(directoryComputers.map(async (computer: any) => {
         const dnsHostName = normalizeHostname(computer.dns_host_name);
         if (!dnsHostName) return;
+        adDnsWithName += 1;
+
+        let addresses: string[] = [];
         try {
-          const addresses = await dns.resolve4(dnsHostName);
-          for (const address of addresses) computersByIp.set(address, computer);
-        } catch {
-          // Ignore stale/unresolvable DNS records; hostname diagnostics still apply.
+          addresses = await dns.resolve4(dnsHostName);
+          if (addresses.length) adDnsSystemResolved += 1;
+        } catch {}
+
+        if (!addresses.length && adDnsServerResolved) {
+          try {
+            addresses = await adDnsResolver.resolve4(dnsHostName);
+            if (addresses.length) adDnsDirectResolved += 1;
+          } catch {}
         }
+
+        if (!addresses.length) {
+          adDnsUnresolved += 1;
+          if (adDnsResolutionSamples.length < 10) {
+            adDnsResolutionSamples.push(dnsHostName);
+          }
+          return;
+        }
+
+        if (adDnsResolutionSamples.length < 10) {
+          adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
+        }
+        for (const address of addresses) computersByIp.set(address, computer);
       }));
       for (const computer of directoryComputers) {
         const name = normalizeHostname(computer.name);
@@ -130,6 +172,7 @@ export async function POST(request: Request) {
       let ipMatches = 0;
       const unmatchedSamples: string[] = [];
       const matchedSamples: string[] = [];
+      let inventoryIpUnmatched = 0;
       const adNameSamples = Array.from(names).slice(0, 10);
       const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
@@ -164,9 +207,12 @@ export async function POST(request: Request) {
           else if (hostnameMatch) hostnameMatches += 1;
           else dnsMatches += 1;
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
-        } else if (unmatchedSamples.length < 10) {
-          const sample = candidates.join(" / ");
-          if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
+        } else {
+          inventoryIpUnmatched += 1;
+          if (unmatchedSamples.length < 10) {
+            const sample = `${host.ip} | ${candidates.join(" / ") || "بدون hostname"}`;
+            if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
+          }
         }
       }
 
@@ -184,6 +230,14 @@ export async function POST(request: Request) {
         hostnameMatches,
         dnsMatches,
         ipMatches,
+        inventoryIpUnmatched,
+        adDnsServer,
+        adDnsServerResolved,
+        adDnsWithName,
+        adDnsSystemResolved,
+        adDnsDirectResolved,
+        adDnsUnresolved,
+        adDnsResolutionSamples,
         unmatchedSamples,
         matchedSamples
       });
