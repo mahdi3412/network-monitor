@@ -4,6 +4,7 @@ import {
   getAdConfig,
   lookupAdComputer,
   lookupAdUserByPersonnel,
+  syncAdUsers,
   testAdConnection
 } from "../../../lib/ad-directory";
 
@@ -66,6 +67,38 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => null);
+
+    if (body?.action === "sync-users") {
+      const users = await syncAdUsers();
+      await initDb();
+
+      let synced = 0;
+      for (const user of users) {
+        const username = String(user?.username || "").trim();
+        if (!username) continue;
+
+        const personnelId = String(user?.personnelId || user?.employeeNumber || username).trim();
+        await run(
+          "INSERT INTO directory_users(personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(personnel_id) DO UPDATE SET username=excluded.username,user_principal_name=excluded.user_principal_name,display_name=excluded.display_name,first_name=excluded.first_name,last_name=excluded.last_name,department=excluded.department,title=excluded.title,email=excluded.email,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
+          [
+            personnelId,
+            username,
+            String(user?.userPrincipalName || ""),
+            String(user?.displayName || ""),
+            String(user?.firstName || ""),
+            String(user?.lastName || ""),
+            String(user?.department || ""),
+            String(user?.title || ""),
+            String(user?.email || ""),
+            String(user?.distinguishedName || ""),
+            new Date().toISOString()
+          ]
+        );
+        synced += 1;
+      }
+
+      return json({ ok: true, synced, total: users.length });
+    }
 
     if (body?.action === "sync-user" && body?.personnelId) {
       const personnelId = String(body.personnelId).trim();
