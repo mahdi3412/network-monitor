@@ -122,7 +122,7 @@ export async function initDb(): Promise<void> {
     managed_by TEXT,
     distinguished_name TEXT,
     last_sync TEXT NOT NULL
-  `);
+  )`);
 
   await run(`CREATE TABLE IF NOT EXISTS directory_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
