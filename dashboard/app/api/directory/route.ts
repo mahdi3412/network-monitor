@@ -173,15 +173,25 @@ export async function POST(request: Request) {
       const unmatchedSamples: string[] = [];
       const matchedSamples: string[] = [];
       let inventoryIpUnmatched = 0;
+      const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
+      const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
       const adNameSamples = Array.from(names).slice(0, 10);
       const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       for (const host of inventory) {
+        const subnetKey = String(host.subnet || "بدون subnet");
+        const subnetStats = inventoryBySubnet.get(subnetKey) || { total: 0, ipMatches: 0, withHostname: 0 };
+        subnetStats.total += 1;
+        const deviceTypeKey = String(host.device_type || "unknown");
+        const deviceStats = inventoryByDeviceType.get(deviceTypeKey) || { total: 0, ipMatches: 0 };
+        deviceStats.total += 1;
+
         const candidates = [host.hostname]
           .map(normalizeHostname)
           .filter(Boolean);
         if (!candidates.length) continue;
         hostsWithHostname += 1;
+        subnetStats.withHostname += 1;
 
         let hostnameMatch = false;
         let dnsMatch = false;
@@ -203,8 +213,11 @@ export async function POST(request: Request) {
 
         if (hostnameMatch || dnsMatch || ipMatch) {
           matchedIps.add(host.ip);
-          if (ipMatch) ipMatches += 1;
-          else if (hostnameMatch) hostnameMatches += 1;
+          if (ipMatch) {
+            ipMatches += 1;
+            subnetStats.ipMatches += 1;
+            deviceStats.ipMatches += 1;
+          } else if (hostnameMatch) hostnameMatches += 1;
           else dnsMatches += 1;
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
@@ -214,7 +227,18 @@ export async function POST(request: Request) {
             if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
           }
         }
+
+        inventoryBySubnet.set(subnetKey, subnetStats);
+        inventoryByDeviceType.set(deviceTypeKey, deviceStats);
       }
+
+      const subnetDiagnostics = Array.from(inventoryBySubnet.entries())
+        .map(([subnet, stats]) => ({ subnet, ...stats }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 15);
+      const deviceTypeDiagnostics = Array.from(inventoryByDeviceType.entries())
+        .map(([deviceType, stats]) => ({ deviceType, ...stats }))
+        .sort((a, b) => b.total - a.total);
 
       return json({
         ok: true,
@@ -231,6 +255,8 @@ export async function POST(request: Request) {
         dnsMatches,
         ipMatches,
         inventoryIpUnmatched,
+        subnetDiagnostics,
+        deviceTypeDiagnostics,
         adDnsServer,
         adDnsServerResolved,
         adDnsWithName,
