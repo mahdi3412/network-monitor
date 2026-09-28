@@ -57,6 +57,8 @@ type NetworkHost = {
   ad_computer_description?: string;
   ad_managed_by?: string;
   ad_computer_dn?: string;
+  ad_matched?: number;
+  ad_match_type?: "hostname" | "dns" | null;
   status: "online" | "recent" | "offline";
 };
 
@@ -452,6 +454,7 @@ export default function Home() {
               <span><strong>Latency</strong> زمان تقریبی رفت‌وبرگشت پاسخ شبکه از سرور تا IP است؛ عدد کمتر معمولاً یعنی مسیر سریع‌تر.</span>
               <span><strong>Computer Name</strong> نام سیستم است که از DNS یا NetBIOS گرفته می‌شود.</span>
               <span><strong>Username</strong> نام کاربر ثبت‌شده در NetBIOS است و فقط برای سیستم‌هایی که این اطلاعات را ارائه کنند نمایش داده می‌شود.</span>
+              <span><strong>AD Match</strong> نشان می‌دهد این IP با رکورد کامپیوتر در AD تطبیق داده شده؛ «نام» بر اساس نام کامپیوتر و «DNS» بر اساس FQDN است.</span>
               <span><strong>اطلاعات AD</strong> بعد از همگام‌سازی، Username به حساب AD متصل می‌شود و نام، شماره پرسنلی، واحد و سمت در داده Inventory قابل جستجو خواهد بود.</span>
               <span><strong>MAC</strong> شناسه سخت‌افزاری کارت شبکه است؛ برای رنج‌های پشت روتر معمولاً از خود سرور قابل مشاهده نیست.</span>
               <span><strong>Method</strong> مشخص می‌کند IP با ICMP، ARP یا TCP پیدا شده است.</span>
@@ -514,13 +517,15 @@ export default function Home() {
               <span>{onlineHosts} فعال</span>
               <span>{recentHosts} اخیر</span>
               <span>{hosts.filter((h) => h.status === "offline").length} قدیمی</span>
+              <span>{hosts.filter((h) => h.ad_matched).length} متصل به AD</span>
+              <span>{hosts.filter((h) => !h.ad_matched).length} بدون تطبیق AD</span>
             </div>
 
             <div className="table-wrap">
               <table className="table">
                 <thead>
                   <tr>
-                    <th>وضعیت</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>AD OS</th><th>AD DNS</th><th>MAC</th><th>Subnet</th>
+                    <th>وضعیت</th><th>AD Match</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>AD OS</th><th>AD DNS</th><th>MAC</th><th>Subnet</th>
                     <th>نوع</th><th>Services</th><th>روش</th><th>Latency</th><th>Agent</th><th>اولین مشاهده</th><th>آخرین مشاهده</th>
                   </tr>
                 </thead>
@@ -528,6 +533,13 @@ export default function Home() {
                   {filteredHosts.map((h) => (
                     <tr key={h.agent_id + ":" + h.ip}>
                       <td><span className={"status " + h.status}>{statusLabel(h.status)}</span></td>
+                      <td>
+                        {h.ad_matched ? (
+                          <span className="status online">متصل به AD · {h.ad_match_type === "dns" ? "DNS" : "نام"}</span>
+                        ) : (
+                          <span className="status offline">بدون تطبیق AD</span>
+                        )}
+                      </td>
                       <td>{h.ip}</td>
                       <td>{h.hostname || "-"}</td>
                       <td>{h.username || "-"}</td>
@@ -547,7 +559,7 @@ export default function Home() {
                       <td>{faDate(h.last_seen)}</td>
                     </tr>
                   ))}
-                  {!filteredHosts.length && <tr><td colSpan={18} className="muted">در این فیلتر نتیجه‌ای پیدا نشد.</td></tr>}
+                  {!filteredHosts.length && <tr><td colSpan={19} className="muted">در این فیلتر نتیجه‌ای پیدا نشد.</td></tr>}
                 </tbody>
               </table>
             </div>
