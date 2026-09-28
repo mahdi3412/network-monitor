@@ -9,52 +9,31 @@ export async function GET() {
   await initDb();
 
   const rows = await all<any>(`
-    SELECT
-      nh.*,
-      c.hostname AS agent_hostname,
-      c.ip AS agent_ip,
-      du.personnel_id AS directory_personnel_id,
-      du.display_name AS directory_display_name,
-      du.first_name AS directory_first_name,
-      du.last_name AS directory_last_name,
-      du.department AS directory_department,
-      du.title AS directory_title,
-      du.email AS directory_email,
+    WITH inventory AS (
+      SELECT nh.*, c.hostname AS agent_hostname, c.ip AS agent_ip,
+        trim(lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)), '.')) AS effective_hostname
+      FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id
+    )
+    SELECT nh.*, nh.agent_hostname, nh.agent_ip,
+      du.personnel_id AS directory_personnel_id, du.display_name AS directory_display_name,
+      du.first_name AS directory_first_name, du.last_name AS directory_last_name,
+      du.department AS directory_department, du.title AS directory_title, du.email AS directory_email,
       du.user_principal_name AS directory_upn,
-      dc.name AS ad_computer_name,
-      dc.dns_host_name AS ad_dns_host_name,
-      dc.operating_system AS ad_operating_system,
-      dc.operating_system_version AS ad_operating_system_version,
-      dc.description AS ad_computer_description,
-      dc.managed_by AS ad_managed_by,
+      dc.name AS ad_computer_name, dc.dns_host_name AS ad_dns_host_name,
+      dc.operating_system AS ad_operating_system, dc.operating_system_version AS ad_operating_system_version,
+      dc.description AS ad_computer_description, dc.managed_by AS ad_managed_by,
       dc.distinguished_name AS ad_computer_dn,
-      CASE
-        WHEN dc.name IS NULL THEN 0
-        ELSE 1
-      END AS ad_matched,
-      CASE
-        WHEN dc.name IS NULL THEN NULL
-        WHEN lower(trim(dc.name)) = lower(trim(CASE
-          WHEN instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.') > 0
-            THEN substr(COALESCE(NULLIF(nh.hostname,''), c.hostname),1,instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.')-1)
-          ELSE COALESCE(NULLIF(nh.hostname,''), c.hostname)
-        END)) THEN 'hostname'
-        WHEN lower(trim(dc.dns_host_name)) = lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname))) THEN 'dns'
-        ELSE 'hostname'
-      END AS ad_match_type
-    FROM network_hosts nh
-    LEFT JOIN clients c ON c.agent_id = nh.agent_id
+      CASE WHEN dc.name IS NULL THEN 0 ELSE 1 END AS ad_matched,
+      CASE WHEN dc.name IS NULL THEN NULL
+        WHEN trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(nh.effective_hostname, '.') > 0 THEN substr(nh.effective_hostname, 1, instr(nh.effective_hostname, '.') - 1) ELSE nh.effective_hostname END), '.') THEN 'hostname'
+        ELSE 'dns' END AS ad_match_type
+    FROM inventory nh
     LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
     LEFT JOIN directory_computers dc
-      ON lower(trim(dc.name)) = lower(trim(CASE
-        WHEN instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.') > 0
-          THEN substr(COALESCE(NULLIF(nh.hostname,''), c.hostname),1,instr(COALESCE(NULLIF(nh.hostname,''), c.hostname),'.')-1)
-        ELSE COALESCE(NULLIF(nh.hostname,''), c.hostname)
-      END))
-      OR lower(trim(dc.dns_host_name)) = lower(trim(COALESCE(NULLIF(nh.hostname,''), c.hostname)))
+      ON trim(lower(dc.name), '.') = trim(lower(CASE WHEN instr(nh.effective_hostname, '.') > 0 THEN substr(nh.effective_hostname, 1, instr(nh.effective_hostname, '.') - 1) ELSE nh.effective_hostname END), '.')
+      OR trim(lower(dc.dns_host_name), '.') = nh.effective_hostname
     ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
   `);
-
   const now = Date.now();
   const merged = new Map<string, any>();
 
