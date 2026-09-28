@@ -187,6 +187,8 @@ export async function initDb(): Promise<void> {
   await run("CREATE INDEX IF NOT EXISTS idx_network_hosts_subnet_last_seen ON network_hosts(subnet,last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_network_ranges_last_seen ON network_ranges(last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_directory_users_username ON directory_users(username)");
+  await run("CREATE INDEX IF NOT EXISTS idx_directory_computers_dns ON directory_computers(dns_host_name)");
+  await run("CREATE INDEX IF NOT EXISTS idx_directory_computers_name ON directory_computers(name)");
   await run("INSERT OR IGNORE INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) SELECT agent_id,subnet,'observed',MIN(first_seen),MAX(last_seen) FROM network_hosts WHERE subnet<>'' GROUP BY agent_id,subnet");
   initialized = true;
 }
