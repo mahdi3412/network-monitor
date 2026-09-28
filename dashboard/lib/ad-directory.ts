@@ -434,7 +434,11 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function First-AttributeValue($Entry, [string]$Name) {
-  if ($null -ne $Entry.Attributes -and $Entry.Attributes.Contains($Name) -and $Entry.Attributes[$Name].Count -gt 0) { return [string]$Entry.Attributes[$Name][0] }
+  if ($null -eq $Entry.Attributes) { return "" }
+  $actualName = @($Entry.Attributes.AttributeNames | Where-Object { $_ -ieq $Name } | Select-Object -First 1)
+  if ($actualName.Count -eq 0) { return "" }
+  $attribute = $Entry.Attributes[$actualName[0]]
+  if ($null -ne $attribute -and $attribute.Count -gt 0) { return [string]$attribute[0] }
   return ""
 }
 
@@ -483,8 +487,11 @@ foreach ($serverUrl in $servers) {
       $response = $connection.SendRequest($request)
 
       foreach ($entry in $response.Entries) {
+        $dn = if ($entry.DistinguishedName) { [string]$entry.DistinguishedName } else { First-AttributeValue $entry "distinguishedName" }
         $name = First-AttributeValue $entry "name"
         $dns = First-AttributeValue $entry "dNSHostName"
+        if (-not $name -and $dn -match '^CN=([^,]+)') { $name = $Matches[1].Trim() }
+        if (-not $name -and $dns) { $name = ($dns -split '.')[0] }
         if (-not $name -and -not $dns) { continue }
         $computers.Add([PSCustomObject]@{
           name = $name;
@@ -493,7 +500,7 @@ foreach ($serverUrl in $servers) {
           operatingSystemVersion = First-AttributeValue $entry "operatingSystemVersion";
           description = First-AttributeValue $entry "description";
           managedBy = First-AttributeValue $entry "managedBy";
-          distinguishedName = First-AttributeValue $entry "distinguishedName"
+          distinguishedName = $dn
         })
       }
       $pageResponse = $response.Controls | Where-Object { $_.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl" } | Select-Object -First 1
