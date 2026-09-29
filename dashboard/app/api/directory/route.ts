@@ -117,9 +117,12 @@ export async function POST(request: Request) {
       const names = new Set<string>();
       const dnsNames = new Set<string>();
       const clientByMac = new Map<string, any>();
+      const clientByIp = new Map<string, any>();
       for (const host of inventory) {
         const mac = normalizeMac(host?.agent_mac);
+        const ip = String(host?.ip || "").trim();
         if (mac && host?.agent_hostname) clientByMac.set(mac, host);
+        if (ip && host?.agent_hostname) clientByIp.set(ip, host);
       }
       const dnsShortNames = new Set<string>();
       const computerByDnsShort = new Map<string, any>();
@@ -267,6 +270,15 @@ export async function POST(request: Request) {
 
         const hostMac = normalizeMac(host?.mac || host?.agent_mac);
         const macClient = hostMac ? clientByMac.get(hostMac) : undefined;
+        const ipClient = clientByIp.get(normalizedIp);
+        if (macClient && ipClient && macClient.agent_hostname !== ipClient.agent_hostname) {
+          identityConflicts.macVsIp += 1;
+          if (identityConflictSamples.length < 20) identityConflictSamples.push(`MAC ${hostMac} -> ${macClient.agent_hostname} / IP ${normalizedIp} -> ${ipClient.agent_hostname}`);
+        }
+        if (macClient?.agent_hostname && host.hostname && normalizeHostname(macClient.agent_hostname) !== normalizeHostname(host.hostname)) {
+          identityConflicts.macVsHostname += 1;
+          if (identityConflictSamples.length < 20) identityConflictSamples.push(`MAC ${hostMac} -> ${macClient.agent_hostname} / scan ${host.hostname}`);
+        }
         const candidates = [
           host.hostname,
           ...(macClient?.agent_hostname ? [macClient.agent_hostname] : []),
@@ -445,6 +457,8 @@ export async function POST(request: Request) {
         adDnsIpConflictSamples,
         adComputerMultiIpCount,
         adComputerMultiIpDiagnostics,
+        identityConflicts,
+        identityConflictSamples,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
