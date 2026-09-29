@@ -234,6 +234,13 @@ async function scanNetwork(){
         }
         if(process.platform==="win32"&&!r.hostname){
           try{
+            const out=await new Promise(resolve=>execFile("ping",["-a","-n","1","-w","500",r.ip],{windowsHide:true,timeout:1200},(_,stdout)=>resolve(String(stdout||""))));
+            const m=String(out).match(/Pinging\s+([^\s\[]+)\s+\[/i);
+            if(m&&m[1]&&m[1]!==r.ip)r.hostname=m[1].trim();
+          }catch{}
+        }
+        if(process.platform==="win32"&&!r.hostname){
+          try{
             const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
             const lines=String(out).split(/\r?\n/);
             for(const line of lines){
