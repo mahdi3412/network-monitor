@@ -288,6 +288,8 @@ export default function Home() {
           ipMatchConflicts: data.ipMatchConflicts || 0,
           adDnsIpConflicts: data.adDnsIpConflicts || 0,
           adDnsIpConflictSamples: data.adDnsIpConflictSamples || [],
+          adComputerMultiIpCount: data.adComputerMultiIpCount || 0,
+          adComputerMultiIpDiagnostics: data.adComputerMultiIpDiagnostics || [],
           unmatchedReasonCounts: data.unmatchedReasonCounts || {},
           unmatchedReasonSamples: data.unmatchedReasonSamples || {},
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
@@ -467,7 +469,7 @@ export default function Home() {
                   <summary>تحلیل تطبیق AD</summary>
                   <div className="ad-diagnostics-list" dir="rtl">
                     <div><b>میزبان قابل بررسی:</b> {adMatchDiagnostics.eligibleInventoryHosts} · <b>رزرو شده:</b> {adMatchDiagnostics.reservedInventoryHosts}</div>
-                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts}</div>
+                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts} · <b>یک AD با چند IP:</b> {adMatchDiagnostics.adComputerMultiIpCount}</div>
                     <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
@@ -475,6 +477,14 @@ export default function Home() {
                       <>
                         <b>نمونه IPهای دارای چند Computer در AD DNS</b>
                         {adMatchDiagnostics.adDnsIpConflictSamples.map((item: string) => <div key={item} dir="ltr">[AD-DNS-CONFLICT] {item}</div>)}
+                      </>
+                    )}
+                    {adMatchDiagnostics.adComputerMultiIpDiagnostics?.length > 0 && (
+                      <>
+                        <b>Computerهای AD با چند IP در DNS</b>
+                        {adMatchDiagnostics.adComputerMultiIpDiagnostics.slice(0, 20).map((item: any) => (
+                          <div key={item.name} dir="ltr">[AD-MULTI-IP] {item.name} -> {item.ips.join(", ")}</div>
+                        ))}
                       </>
                     )}
                     <b>نمونه‌های Match</b>
