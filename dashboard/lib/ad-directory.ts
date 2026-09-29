@@ -521,7 +521,25 @@ foreach ($serverUrl in $servers) {
         $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
         if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
         [void]$request.Controls.Add($page)
-        $response = $connection.SendRequest($request)
+        try {
+          $response = $connection.SendRequest($request)
+        } catch {
+          $message = [string]$_.Exception.Message
+          if ($message -notmatch "server is unavailable") { throw }
+          if ($null -ne $connection) { $connection.Dispose() }
+          $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
+          if ($authMode -eq "integrated") {
+            $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+          } else {
+            $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+            $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+          }
+          $connection.SessionOptions.ProtocolVersion = 3
+          if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
+          $connection.Bind()
+          Start-Sleep -Milliseconds 150
+          $response = $connection.SendRequest($request)
+        }
         Add-ComputerEntries $response $entries
 
         $pageResponse = $null
@@ -574,7 +592,25 @@ foreach ($serverUrl in $servers) {
           $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
           if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
           [void]$request.Controls.Add($page)
-          $response = $connection.SendRequest($request)
+          try {
+            $response = $connection.SendRequest($request)
+          } catch {
+            $message = [string]$_.Exception.Message
+            if ($message -notmatch "server is unavailable") { throw }
+            if ($null -ne $connection) { $connection.Dispose() }
+            $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
+            if ($authMode -eq "integrated") {
+              $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+            } else {
+              $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+              $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+            }
+            $connection.SessionOptions.ProtocolVersion = 3
+            if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
+            $connection.Bind()
+            Start-Sleep -Milliseconds 150
+            $response = $connection.SendRequest($request)
+          }
           Add-ComputerEntries $response $specialEntries
           $pageResponse = $null
           for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
