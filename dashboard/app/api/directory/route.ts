@@ -110,16 +110,20 @@ export async function POST(request: Request) {
         distinguishedName: String(computer?.distinguishedName || "")
       }));
       const [inventory, directoryComputers] = await Promise.all([
-        all<any>("SELECT nh.ip, nh.hostname, nh.mac, nh.subnet, nh.device_type, nh.last_seen, c.hostname AS agent_hostname, c.mac AS agent_mac FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
+        all<any>("SELECT nh.ip, nh.hostname, nh.mac, nh.subnet, nh.device_type, nh.services, nh.method, nh.last_seen, c.hostname AS agent_hostname, c.mac AS agent_mac FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
         all<any>("SELECT name,dns_host_name FROM directory_computers")
       ]);
 
       const names = new Set<string>();
       const dnsNames = new Set<string>();
       const clientByMac = new Map<string, any>();
+      const clientByIp = new Map<string, any>();
       const agentAdDiagnostics = new Map<string, { ip: string; mac: string; hostname: string; adByName: string; adByIp: string }>();
+      const identityConflicts = { macVsIp: 0, macVsHostname: 0 };
+      const identityConflictSamples: string[] = [];
 
-      const mac = normalizeMac(host?.agent_mac);
+      for (const host of inventory) {
+        const mac = normalizeMac(host?.agent_mac);
         const ip = String(host?.ip || "").trim();
         if (mac && host?.agent_hostname) clientByMac.set(mac, host);
         if (ip && host?.agent_hostname) clientByIp.set(ip, host);
@@ -268,6 +272,17 @@ export async function POST(request: Request) {
           adByIp: String(adByIp?.name || adByIp?.dns_host_name || "")
         });
       }
+
+      const adOsByName = new Map<string, string>();
+      for (const computer of directoryComputers) {
+        const key = normalizeHostname(computer.name) || shortHostname(computer.dns_host_name);
+        const os = String(computer.operating_system || "").trim();
+        if (key && os) adOsByName.set(key, os);
+      }
+      const inventoryAdOsDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
+      const inventoryClassificationDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
+      const windowsUnmatchedDiagnostics = new Map<string, number>();
+      const windowsUnmatchedSamples: string[] = [];
 
       const matchedIps = new Set<string>();
       let inventoryDnsIpConflicts = 0;
@@ -494,17 +509,6 @@ export async function POST(request: Request) {
       const deviceTypeDiagnostics = Array.from(inventoryByDeviceType.entries())
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
-
-      const adOsByName = new Map<string, string>();
-      for (const computer of directoryComputers) {
-        const key = normalizeHostname(computer.name) || shortHostname(computer.dns_host_name);
-        const os = String(computer.operating_system || "").trim();
-        if (key && os) adOsByName.set(key, os);
-      }
-      const inventoryAdOsDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
-      const inventoryClassificationDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
-      const windowsUnmatchedDiagnostics = new Map<string, number>();
-      const windowsUnmatchedSamples: string[] = [];
 
       const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
         .filter(([, ips]) => ips.size > 1)
