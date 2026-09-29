@@ -441,6 +441,21 @@ export async function POST(request: Request) {
         else if (deviceType === "printer" || serviceText.includes("printer")) classification = "printer";
         else if (deviceType === "linux-or-network" || serviceText.includes("ssh")) classification = "linux-network";
         else if (deviceType === "unknown") classification = adOs ? "ad-nonwindows" : "unknown";
+        const hasWindowsEvidence = adOs.includes("windows") || deviceType === "windows" || serviceText.includes("microsoft") || serviceText.includes("rdp");
+        if (hasWindowsEvidence && !(ipMatch || hostnameMatch || dnsMatch)) {
+          let reason = "outside-ad-or-unknown";
+          if (host.hostname && !hasAdHostname && (forwardIps.length === 0 || !forwardIps.includes(normalizedIp))) {
+            reason = "hostname-not-in-ad";
+          } else if (forwardIps.length && !forwardIps.includes(normalizedIp)) {
+            reason = "dns-ip-mismatch";
+          } else if (adDnsServerResolved && !ipResolvedInAdDns) {
+            reason = "not-resolved-in-ad-dns";
+          }
+          windowsUnmatchedDiagnostics.set(reason, (windowsUnmatchedDiagnostics.get(reason) || 0) + 1);
+          if (windowsUnmatchedSamples.length < 30) {
+            windowsUnmatchedSamples.push(`${normalizedIp} | ${host.hostname || "-"} | ${reason}`);
+          }
+        }
         const classStats = inventoryClassificationDiagnostics.get(classification) || { total: 0, matches: 0, unmatched: 0 };
         classStats.total += 1;
         if (ipMatch || hostnameMatch || dnsMatch) classStats.matches += 1;
@@ -474,6 +489,8 @@ export async function POST(request: Request) {
       }
       const inventoryAdOsDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
       const inventoryClassificationDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
+      const windowsUnmatchedDiagnostics = new Map<string, number>();
+      const windowsUnmatchedSamples: string[] = [];
 
       const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
         .filter(([, ips]) => ips.size > 1)
@@ -507,7 +524,11 @@ export async function POST(request: Request) {
         inventoryIpUnmatched,
         subnetDiagnostics,
         deviceTypeDiagnostics,
-        inventoryClassificationDiagnostics: Array.from(inventoryClassificationDiagnostics.entries())
+        windowsUnmatchedDiagnostics: Array.from(windowsUnmatchedDiagnostics.entries())
+          .map(([reason, total]) => ({ reason, total }))
+          .sort((a, b) => b.total - a.total),
+        windowsUnmatchedSamples,
+                inventoryClassificationDiagnostics: Array.from(inventoryClassificationDiagnostics.entries())
           .map(([classification, stats]) => ({ classification, ...stats }))
           .sort((a, b) => b.total - a.total),
                 inventoryAdOsDiagnostics: Array.from(inventoryAdOsDiagnostics.entries())
