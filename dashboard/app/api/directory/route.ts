@@ -432,6 +432,15 @@ export async function POST(request: Request) {
 
         inventoryBySubnet.set(subnetKey, subnetStats);
         inventoryByDeviceType.set(deviceTypeKey, deviceStats);
+        const candidateAdName = candidates.map(shortHostname).find((value) => adOsByName.has(value));
+        if (candidateAdName) {
+          const os = adOsByName.get(candidateAdName) || "unknown";
+          const stats = inventoryAdOsDiagnostics.get(os) || { total: 0, matches: 0, unmatched: 0 };
+          stats.total += 1;
+          if (ipMatch || hostnameMatch || dnsMatch) stats.matches += 1;
+          else stats.unmatched += 1;
+          inventoryAdOsDiagnostics.set(os, stats);
+        }
       }
 
       const subnetDiagnostics = Array.from(inventoryBySubnet.entries())
@@ -441,6 +450,14 @@ export async function POST(request: Request) {
       const deviceTypeDiagnostics = Array.from(inventoryByDeviceType.entries())
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
+
+      const adOsByName = new Map<string, string>();
+      for (const computer of directoryComputers) {
+        const key = normalizeHostname(computer.name) || shortHostname(computer.dns_host_name);
+        const os = String(computer.operating_system || "").trim();
+        if (key && os) adOsByName.set(key, os);
+      }
+      const inventoryAdOsDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
 
       const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
         .filter(([, ips]) => ips.size > 1)
@@ -474,6 +491,9 @@ export async function POST(request: Request) {
         inventoryIpUnmatched,
         subnetDiagnostics,
         deviceTypeDiagnostics,
+        inventoryAdOsDiagnostics: Array.from(inventoryAdOsDiagnostics.entries())
+          .map(([operatingSystem, stats]) => ({ operatingSystem, ...stats }))
+          .sort((a, b) => b.total - a.total),
         adDnsServer,
         adDnsServerResolved,
         adDnsWithName,
