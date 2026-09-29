@@ -125,6 +125,7 @@ export async function POST(request: Request) {
       const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
       const adDnsIpConflicts = new Map<string, Set<string>>();
+      const adComputerIpMap = new Map<string, Set<string>>();
       const computerByName = new Map<string, any>();
       const computerByDns = new Map<string, any>();
 
@@ -209,6 +210,12 @@ export async function POST(request: Request) {
                 adDnsIpConflicts.set(ip, set);
               }
               computersByIp.set(ip, computer);
+              const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
+              if (computerKey) {
+                const ips = adComputerIpMap.get(computerKey) || new Set<string>();
+                ips.add(ip);
+                adComputerIpMap.set(computerKey, ips);
+              }
             }
             if (adDnsResolutionSamples.length < 10) {
               adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
@@ -391,6 +398,13 @@ export async function POST(request: Request) {
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
 
+      const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
+        .filter(([, ips]) => ips.size > 1)
+        .sort((a, b) => b[1].size - a[1].size)
+        .slice(0, 50)
+        .map(([name, ips]) => ({ name, ips: Array.from(ips) }));
+      const adComputerMultiIpCount = Array.from(adComputerIpMap.values()).filter((ips) => ips.size > 1).length;
+
       const adDnsIpConflictSamples = Array.from(adDnsIpConflicts.entries())
         .slice(0, 20)
         .map(([ip, values]) => `${ip} -> ${Array.from(values).filter(Boolean).join(" / ")}`);
@@ -429,6 +443,8 @@ export async function POST(request: Request) {
         macMatchConflicts,
         adDnsIpConflicts: adDnsIpConflicts.size,
         adDnsIpConflictSamples,
+        adComputerMultiIpCount,
+        adComputerMultiIpDiagnostics,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
