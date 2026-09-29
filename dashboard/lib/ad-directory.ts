@@ -505,13 +505,30 @@ foreach ($serverUrl in $servers) {
       }
     }
 
+    function New-AdConnection() {
+      $newConnection = $null
+      $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
+      if ($authMode -eq "integrated") {
+        $newConnection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+      } else {
+        $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+        $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+      }
+      $newConnection.SessionOptions.ProtocolVersion = 3
+      if ($useSsl) { $newConnection.SessionOptions.SecureSocketLayer = $true }
+      $newConnection.Bind()
+      return $newConnection
+    }
+
     function Search-ComputerPartition([string]$Prefix) {
       $escapedPrefix = Escape-LdapFilter $Prefix
       $filter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*)(name=$escapedPrefix*))"
-      $cookie = [byte[]]::new(0)
       $entries = [System.Collections.Generic.List[object]]::new()
-
-      do {
+      $partitionConnection = $null
+      try {
+        # The DC closes long-lived search connections in this environment.
+        # Use a fresh authenticated LDAP connection for every partition request.
+        $partitionConnection = New-AdConnection
         $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
         $request.DistinguishedName = $baseDn
         $request.Filter = $filter
@@ -519,41 +536,13 @@ foreach ($serverUrl in $servers) {
         foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
         $request.SizeLimit = 0
         $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
-        if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
         [void]$request.Controls.Add($page)
-        try {
-          $response = $connection.SendRequest($request)
-        } catch {
-          $message = [string]$_.Exception.Message
-          if ($message -notmatch "server is unavailable") { throw }
-          if ($null -ne $connection) { $connection.Dispose() }
-          $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
-          if ($authMode -eq "integrated") {
-            $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
-          } else {
-            $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
-            $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
-          }
-          $connection.SessionOptions.ProtocolVersion = 3
-          if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
-          $connection.Bind()
-          Start-Sleep -Milliseconds 150
-          $response = $connection.SendRequest($request)
-        }
+        $response = $partitionConnection.SendRequest($request)
         Add-ComputerEntries $response $entries
-
-        $pageResponse = $null
-        for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
-          $control = $response.Controls[$controlIndex]
-          if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
-            $pageResponse = $control
-            break
-          }
-        }
-        $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
-      } while ($cookie.Length -gt 0)
-
-      return @($entries)
+        return @($entries)
+      } finally {
+        if ($null -ne $partitionConnection) { $partitionConnection.Dispose() }
+      }
     }
 
     function Search-ComputerPrefix([string]$Prefix, [int]$Depth = 0) {
@@ -592,24 +581,12 @@ foreach ($serverUrl in $servers) {
           $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
           if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
           [void]$request.Controls.Add($page)
+          $specialConnection = $null
           try {
-            $response = $connection.SendRequest($request)
-          } catch {
-            $message = [string]$_.Exception.Message
-            if ($message -notmatch "server is unavailable") { throw }
-            if ($null -ne $connection) { $connection.Dispose() }
-            $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
-            if ($authMode -eq "integrated") {
-              $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
-            } else {
-              $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
-              $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
-            }
-            $connection.SessionOptions.ProtocolVersion = 3
-            if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
-            $connection.Bind()
-            Start-Sleep -Milliseconds 150
-            $response = $connection.SendRequest($request)
+            $specialConnection = New-AdConnection
+            $response = $specialConnection.SendRequest($request)
+          } finally {
+            if ($null -ne $specialConnection) { $specialConnection.Dispose() }
           }
           Add-ComputerEntries $response $specialEntries
           $pageResponse = $null
