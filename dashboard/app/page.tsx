@@ -105,6 +105,7 @@ export default function Home() {
   const [adSyncing, setAdSyncing] = useState(false);
   const [adComputerSyncing, setAdComputerSyncing] = useState(false);
   const [adMessage, setAdMessage] = useState("");
+  const [adDiagnostics, setAdDiagnostics] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -279,6 +280,7 @@ export default function Home() {
       const data = await response.json();
 
       if (response.ok && data?.ok) {
+        setAdDiagnostics(Array.isArray(data.unmatchedDiagnostics) ? data.unmatchedDiagnostics : []);
         setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · ذخیره: ${data.persistedComputers ?? 0} · رکورد DB: ${data.directoryComputerRows ?? 0} · Inventory: ${data.inventoryHosts ?? 0} · IP Match: ${data.ipMatches ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · DNS AD: ${data.adDnsWithName ?? 0} نام / ${data.adDnsSystemResolved ?? 0} با DNS سیستم / ${data.adDnsUnresolved ?? 0} نامشخص · Subnet: ${(data.subnetDiagnostics || []).slice(0, 5).map((x: any) => `${x.subnet}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · Device: ${(data.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · نمونه بدون Match: ${(data.unmatchedSamples || []).slice(0, 5).join(", ") || "-"}`);
         await load();
       } else {
@@ -447,6 +449,16 @@ export default function Home() {
                 </button>
               </div>
               {adMessage && <span className="muted">{adMessage}</span>}
+              {adDiagnostics.length > 0 && (
+                <details className="ad-diagnostics">
+                  <summary>جزئیات نمونه‌های بدون تطبیق AD ({adDiagnostics.length})</summary>
+                  <div className="ad-diagnostics-list" dir="ltr">
+                    {adDiagnostics.map((item, index) => (
+                      <div key={index}>{item}</div>
+                    ))}
+                  </div>
+                </details>
+              )}
             </div>
 
             <div className="inventory-help">
