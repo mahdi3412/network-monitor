@@ -106,6 +106,22 @@ export async function POST(request: Request) {
       const names = new Set<string>();
       const dnsNames = new Set<string>();
       const computersByIp = new Map<string, any>();
+      const computerByName = new Map<string, any>();
+      const computerByDns = new Map<string, any>();
+
+      for (const computer of directoryComputers) {
+        const name = normalizeHostname(computer.name);
+        const dnsHostName = normalizeHostname(computer.dns_host_name);
+        if (name) {
+          names.add(name);
+          computerByName.set(name, computer);
+        }
+        if (dnsHostName) {
+          dnsNames.add(dnsHostName);
+          computerByDns.set(dnsHostName, computer);
+        }
+      }
+
       const adDnsResolver = new dns.Resolver();
       let adDnsServer = "";
       let adDnsServerResolved = false;
@@ -118,7 +134,7 @@ export async function POST(request: Request) {
           adDnsServerResolved = true;
         }
       } catch {
-        // Keep the system resolver as a fallback when the AD server address cannot be resolved.
+        // Keep the system resolver as a fallback.
       }
 
       let adDnsWithName = 0;
@@ -127,57 +143,32 @@ export async function POST(request: Request) {
       let adDnsUnresolved = 0;
       const adDnsResolutionSamples: string[] = [];
 
+      // Forward-resolve only through the normal resolver first. Direct AD DNS
+      // lookups are deliberately avoided for every AD computer because a large
+      // number of missing DNS records can make the sync wait on resolver timeouts.
       await Promise.all(directoryComputers.map(async (computer: any) => {
         const dnsHostName = normalizeHostname(computer.dns_host_name);
         if (!dnsHostName) return;
         adDnsWithName += 1;
 
-        let addresses: string[] = [];
         try {
-          addresses = await dns.resolve4(dnsHostName);
-          if (addresses.length) adDnsSystemResolved += 1;
+          const addresses = await dns.resolve4(dnsHostName);
+          if (addresses.length) {
+            adDnsSystemResolved += 1;
+            for (const address of addresses) computersByIp.set(address, computer);
+            if (adDnsResolutionSamples.length < 10) {
+              adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
+            }
+            return;
+          }
         } catch {}
 
-        if (!addresses.length && adDnsServerResolved) {
-          try {
-            addresses = await adDnsResolver.resolve4(dnsHostName);
-            if (addresses.length) adDnsDirectResolved += 1;
-          } catch {}
-        }
-
-        if (!addresses.length) {
-          adDnsUnresolved += 1;
-          if (adDnsResolutionSamples.length < 10) {
-            adDnsResolutionSamples.push(dnsHostName);
-          }
-          return;
-        }
-
-        if (adDnsResolutionSamples.length < 10) {
-          adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
-        }
-        for (const address of addresses) computersByIp.set(address, computer);
+        adDnsUnresolved += 1;
+        if (adDnsResolutionSamples.length < 10) adDnsResolutionSamples.push(dnsHostName);
       }));
-      for (const computer of directoryComputers) {
-        const name = normalizeHostname(computer.name);
-        const dns = normalizeHostname(computer.dns_host_name);
-        if (name) names.add(name);
-        if (dns) dnsNames.add(dns);
-      }
 
-      // Reverse-resolve inventory IPs against the AD DNS server. Agent-side reverse DNS
-      // is often unavailable, while the DC's DNS zone can still know the workstation name.
-      const inventoryReverseNames = new Map<string, string[]>();
-      if (adDnsServerResolved) {
-        await Promise.all(inventory.map(async (host: any) => {
-          const ip = String(host?.ip || "").trim();
-          if (!ip) return;
-          try {
-            const names = await adDnsResolver.reverse(ip);
-            if (names.length) inventoryReverseNames.set(ip, names.map(normalizeHostname).filter(Boolean));
-          } catch {}
-        }));
-      }
+      const adNameSamples = Array.from(names).slice(0, 10);
+      const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       const matchedIps = new Set<string>();
       let hostsWithHostname = 0;
