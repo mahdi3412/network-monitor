@@ -217,8 +217,8 @@ export async function POST(request: Request) {
       let dnsMatches = 0;
       let ipMatches = 0;
       let ipMatchConflicts = 0;
-      const matchMethodCounts = { ip: 0, hostname: 0, dns: 0 };
-      const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[] };
+      const matchMethodCounts = { ip: 0, hostname: 0, dns: 0, macHostname: 0 };
+      const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[], macHostname: [] as string[] };
 
       const unmatchedSamples: string[] = [];
       const unmatchedDiagnostics: string[] = [];
@@ -268,12 +268,15 @@ export async function POST(request: Request) {
         const ipMatch = Boolean(ipComputer);
         let hostnameMatch = false;
         let dnsMatch = false;
+        const macHostnameCandidate = macClient?.agent_hostname ? normalizeHostname(macClient.agent_hostname) : "";
+        let macHostnameMatch = false;
         let matchedCandidate = ipMatch ? `${host.ip} -> ${ipComputer?.name || ipComputer?.dns_host_name || ""}` : "";
 
         for (const candidate of candidates) {
           const shortCandidate = shortHostname(candidate);
           if (names.has(shortCandidate) || dnsShortNames.has(shortCandidate)) {
             hostnameMatch = true;
+            macHostnameMatch = Boolean(macHostnameCandidate && shortCandidate === shortHostname(macHostnameCandidate));
             matchedCandidate = candidate;
             break;
           }
@@ -296,8 +299,13 @@ export async function POST(request: Request) {
             if (matchSamples.ip.length < 10) matchSamples.ip.push(matchedCandidate);
           } else if (hostnameMatch) {
             hostnameMatches += 1;
-            matchMethodCounts.hostname += 1;
-            if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
+            if (macHostnameMatch) {
+              matchMethodCounts.macHostname += 1;
+              if (matchSamples.macHostname.length < 10) matchSamples.macHostname.push(`${matchedCandidate} [MAC-confirmed] -> ${host.ip}`);
+            } else {
+              matchMethodCounts.hostname += 1;
+              if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
+            }
           } else {
             dnsMatches += 1;
             matchMethodCounts.dns += 1;
