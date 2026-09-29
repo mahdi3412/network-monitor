@@ -192,6 +192,7 @@ export async function POST(request: Request) {
       let dnsMatches = 0;
       let ipMatches = 0;
       const unmatchedSamples: string[] = [];
+      const unmatchedDiagnostics: string[] = [];
       const matchedSamples: string[] = [];
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
@@ -221,7 +222,8 @@ export async function POST(request: Request) {
 
         // IP matching must not depend on reverse-DNS/NBT hostname availability.
         // A host can be an AD computer even when its inventory hostname is empty.
-        const ipMatch = computersByIp.has(host.ip);
+        const normalizedIp = String(host.ip || "").trim();
+        const ipMatch = computersByIp.has(normalizedIp);
         let hostnameMatch = false;
         let dnsMatch = false;
         let matchedCandidate = ipMatch ? `${host.ip} -> ${computersByIp.get(host.ip)?.name || ""}` : "";
@@ -257,6 +259,27 @@ export async function POST(request: Request) {
           if (unmatchedSamples.length < 10) {
             const sample = `${host.ip} | ${candidates.join(" / ") || "بدون hostname"}`;
             if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
+          }
+          if (unmatchedDiagnostics.length < 20) {
+            const reverseNames = inventoryReverseNames.get(normalizedIp) || [];
+            const shortCandidates = candidates.map(shortHostname).filter(Boolean);
+            const adByName = shortCandidates
+              .map((value) => computerByName.get(value))
+              .filter(Boolean)
+              .map((computer) => String(computer.name || computer.dns_host_name || ""));
+            const adByDns = candidates
+              .map((value) => computerByDns.get(value))
+              .filter(Boolean)
+              .map((computer) => String(computer.name || computer.dns_host_name || ""));
+            const details = [
+              `IP=${normalizedIp || "-"}`,
+              `host=${String(host.hostname || "-")}`,
+              `reverse=${reverseNames.join(",") || "-"}`,
+              `candidates=${candidates.join(",") || "-"}`,
+              `AD-name=${adByName.join(",") || "-"}`,
+              `AD-dns=${adByDns.join(",") || "-"}`
+            ].join(" | ");
+            if (!unmatchedDiagnostics.includes(details)) unmatchedDiagnostics.push(details);
           }
         }
 
@@ -300,6 +323,7 @@ export async function POST(request: Request) {
         adDnsUnresolved,
         adDnsResolutionSamples,
         unmatchedSamples,
+        unmatchedDiagnostics,
         matchedSamples
       });
     }
