@@ -112,6 +112,8 @@ export async function POST(request: Request) {
 
       const names = new Set<string>();
       const dnsNames = new Set<string>();
+      const dnsShortNames = new Set<string>();
+      const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
       const computerByName = new Map<string, any>();
       const computerByDns = new Map<string, any>();
@@ -126,6 +128,11 @@ export async function POST(request: Request) {
         if (dnsHostName) {
           dnsNames.add(dnsHostName);
           computerByDns.set(dnsHostName, computer);
+          const shortDnsName = shortHostname(dnsHostName);
+          if (shortDnsName) {
+            dnsShortNames.add(shortDnsName);
+            computerByDnsShort.set(shortDnsName, computer);
+          }
         }
       }
 
@@ -246,7 +253,8 @@ export async function POST(request: Request) {
 
         for (const candidate of candidates) {
           if (ipMatch) break;
-          if (names.has(shortHostname(candidate))) {
+          const shortCandidate = shortHostname(candidate);
+          if (names.has(shortCandidate) || dnsShortNames.has(shortCandidate)) {
             hostnameMatch = true;
             matchedCandidate = candidate;
             break;
@@ -269,7 +277,7 @@ export async function POST(request: Request) {
           } else {
             dnsMatches += 1;
           }
-          if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
+            if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
           inventoryIpUnmatched += 1;
           if (unmatchedSamples.length < 10) {
@@ -280,7 +288,7 @@ export async function POST(request: Request) {
             const reverseNames = inventoryReverseNames.get(normalizedIp) || [];
             const shortCandidates = candidates.map(shortHostname).filter(Boolean);
             const adByName = shortCandidates
-              .map((value) => computerByName.get(value))
+              .map((value) => computerByName.get(value) || computerByDnsShort.get(value))
               .filter(Boolean)
               .map((computer) => String(computer.name || computer.dns_host_name || ""));
             const adByDns = candidates
