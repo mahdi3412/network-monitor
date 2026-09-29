@@ -174,6 +174,8 @@ export async function POST(request: Request) {
       // Reverse-resolve inventory IPs against the AD DNS server so hosts with
       // missing agent-side hostnames can still be matched to AD computers.
       const inventoryReverseNames = new Map<string, string[]>();
+      const inventoryForwardIps = new Map<string, string[]>();
+      const inventoryDnsDiagnostics: Array<{ ip: string; hostname: string; resolvedIps: string[]; adIps: string[] }> = [];
       if (adDnsServerResolved) {
         await Promise.all(inventory.map(async (host: any) => {
           const ip = String(host?.ip || "").trim();
@@ -189,6 +191,28 @@ export async function POST(request: Request) {
           } catch {}
         }));
       }
+
+      // Forward-resolve inventory hostnames with the system resolver to detect
+      // hostname->IP mismatches independently from AD DNS matching.
+      await Promise.all(inventory.map(async (host: any) => {
+        const ip = String(host?.ip || "").trim();
+        const hostname = normalizeHostname(host?.hostname);
+        if (!ip || !hostname || isReservedInventoryIp(ip)) return;
+        try {
+          const addresses = await dns.resolve4(hostname);
+          const resolvedIps = addresses.map((value) => String(value || "").trim()).filter(Boolean);
+          if (!resolvedIps.length) return;
+          inventoryForwardIps.set(ip, resolvedIps);
+          if (!resolvedIps.includes(ip) && inventoryDnsDiagnostics.length < 50) {
+            inventoryDnsDiagnostics.push({
+              ip,
+              hostname,
+              resolvedIps,
+              adIps: []
+            });
+          }
+        } catch {}
+      }));
 
       // Forward-resolve only through the normal resolver first. Direct AD DNS
       // lookups are deliberately avoided for every AD computer because a large
@@ -232,6 +256,7 @@ export async function POST(request: Request) {
       }));
 
       const matchedIps = new Set<string>();
+      let inventoryDnsIpConflicts = 0;
       let reservedInventoryHosts = 0;
       let eligibleInventoryHosts = 0;
       let hostsWithHostname = 0;
@@ -279,6 +304,13 @@ export async function POST(request: Request) {
           identityConflicts.macVsHostname += 1;
           if (identityConflictSamples.length < 20) identityConflictSamples.push(`MAC ${hostMac} -> ${macClient.agent_hostname} / scan ${host.hostname}`);
         }
+        const forwardIps = inventoryForwardIps.get(normalizedIp) || [];
+        if (forwardIps.length && !forwardIps.includes(normalizedIp)) {
+          inventoryDnsIpConflicts += 1;
+          const diagnostic = inventoryDnsDiagnostics.find((item) => item.ip === normalizedIp);
+          if (diagnostic) diagnostic.adIps = forwardIps;
+        }
+
         const candidates = [
           host.hostname,
           ...(macClient?.agent_hostname ? [macClient.agent_hostname] : []),
@@ -457,6 +489,8 @@ export async function POST(request: Request) {
         adDnsIpConflictSamples,
         adComputerMultiIpCount,
         adComputerMultiIpDiagnostics,
+        inventoryDnsIpConflicts,
+        inventoryDnsDiagnostics,
         identityConflicts,
         identityConflictSamples,
         unmatchedSamples,
