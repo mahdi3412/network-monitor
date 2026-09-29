@@ -118,26 +118,8 @@ export async function POST(request: Request) {
       const dnsNames = new Set<string>();
       const clientByMac = new Map<string, any>();
       const agentAdDiagnostics = new Map<string, { ip: string; mac: string; hostname: string; adByName: string; adByIp: string }>();
-      const clientByIp = new Map<string, any>();
-      for (const host of inventory) {
-        const agentHostname = normalizeHostname(host?.agent_hostname);
-        const agentIp = String(host?.ip || "").trim();
-        const agentMac = normalizeMac(host?.agent_mac);
-        if (agentHostname || agentIp || agentMac) {
-          const adByName = computerByName.get(shortHostname(agentHostname)) || computerByDnsShort.get(shortHostname(agentHostname));
-          const adByIp = computersByIp.get(agentIp);
-          const key = String(host?.agent_hostname || host?.ip || host?.agent_mac || "").trim();
-          if (key && !agentAdDiagnostics.has(key)) {
-            agentAdDiagnostics.set(key, {
-              ip: agentIp,
-              mac: agentMac,
-              hostname: String(host?.agent_hostname || ""),
-              adByName: String(adByName?.name || adByName?.dns_host_name || ""),
-              adByIp: String(adByIp?.name || adByIp?.dns_host_name || "")
-            });
-          }
-        }
-        const mac = normalizeMac(host?.agent_mac);
+
+      const mac = normalizeMac(host?.agent_mac);
         const ip = String(host?.ip || "").trim();
         if (mac && host?.agent_hostname) clientByMac.set(mac, host);
         if (ip && host?.agent_hostname) clientByIp.set(ip, host);
@@ -272,6 +254,20 @@ export async function POST(request: Request) {
         adDnsUnresolved += 1;
         if (adDnsResolutionSamples.length < 10) adDnsResolutionSamples.push(dnsHostName);
       }));
+
+      for (const host of inventory) {
+        const agentHostname = normalizeHostname(host?.agent_hostname);
+        const agentIp = String(host?.ip || "").trim();
+        const agentMac = normalizeMac(host?.agent_mac);
+        const adByName = computerByName.get(shortHostname(agentHostname)) || computerByDnsShort.get(shortHostname(agentHostname));
+        const adByIp = computersByIp.get(agentIp);
+        const key = String(host?.agent_hostname || host?.ip || host?.agent_mac || "").trim();
+        if (key && !agentAdDiagnostics.has(key)) agentAdDiagnostics.set(key, {
+          ip: agentIp, mac: agentMac, hostname: String(host?.agent_hostname || ""),
+          adByName: String(adByName?.name || adByName?.dns_host_name || ""),
+          adByIp: String(adByIp?.name || adByIp?.dns_host_name || "")
+        });
+      }
 
       const matchedIps = new Set<string>();
       let inventoryDnsIpConflicts = 0;
