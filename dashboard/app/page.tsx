@@ -106,6 +106,7 @@ export default function Home() {
   const [adComputerSyncing, setAdComputerSyncing] = useState(false);
   const [adMessage, setAdMessage] = useState("");
   const [adDiagnostics, setAdDiagnostics] = useState<string[]>([]);
+  const [adMatchDiagnostics, setAdMatchDiagnostics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
@@ -281,6 +282,16 @@ export default function Home() {
 
       if (response.ok && data?.ok) {
         setAdDiagnostics(Array.isArray(data.unmatchedDiagnostics) ? data.unmatchedDiagnostics : []);
+        setAdMatchDiagnostics({
+          matchMethodCounts: data.matchMethodCounts || {},
+          matchSamples: data.matchSamples || {},
+          ipMatchConflicts: data.ipMatchConflicts || 0,
+          unmatchedReasonCounts: data.unmatchedReasonCounts || {},
+          unmatchedReasonSamples: data.unmatchedReasonSamples || {},
+          deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
+          eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
+          reservedInventoryHosts: data.reservedInventoryHosts || 0
+        });
         setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · ذخیره: ${data.persistedComputers ?? 0} · رکورد DB: ${data.directoryComputerRows ?? 0} · Inventory: ${data.inventoryHosts ?? 0} · IP Match: ${data.ipMatches ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · DNS AD: ${data.adDnsWithName ?? 0} نام / ${data.adDnsSystemResolved ?? 0} با DNS سیستم / ${data.adDnsUnresolved ?? 0} نامشخص · Subnet: ${(data.subnetDiagnostics || []).slice(0, 5).map((x: any) => `${x.subnet}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · Device: ${(data.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · نمونه بدون Match: ${(data.unmatchedSamples || []).slice(0, 5).join(", ") || "-"}`);
         await load();
       } else {
@@ -449,13 +460,31 @@ export default function Home() {
                 </button>
               </div>
               {adMessage && <span className="muted">{adMessage}</span>}
+              {adMatchDiagnostics && (
+                <details className="ad-diagnostics">
+                  <summary>تحلیل تطبیق AD</summary>
+                  <div className="ad-diagnostics-list" dir="rtl">
+                    <div><b>میزبان قابل بررسی:</b> {adMatchDiagnostics.eligibleInventoryHosts} · <b>رزرو شده:</b> {adMatchDiagnostics.reservedInventoryHosts}</div>
+                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts}</div>
+                    <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
+                    <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
+                    <hr />
+                    <b>نمونه‌های Match</b>
+                    {Object.entries(adMatchDiagnostics.matchSamples || {}).flatMap(([method, samples]: any) => (samples || []).map((item: string) => (
+                      <div key={`${method}-${item}`} dir="ltr">[{method}] {item}</div>
+                    )))}
+                    <b>نمونه‌های بدون Match</b>
+                    {Object.entries(adMatchDiagnostics.unmatchedReasonSamples || {}).flatMap(([reason, samples]: any) => (samples || []).map((item: string) => (
+                      <div key={`${reason}-${item}`} dir="ltr">[{reason}] {item}</div>
+                    )))}
+                  </div>
+                </details>
+              )}
               {adDiagnostics.length > 0 && (
                 <details className="ad-diagnostics">
-                  <summary>جزئیات نمونه‌های بدون تطبیق AD ({adDiagnostics.length})</summary>
+                  <summary>جزئیات خام بدون تطبیق AD ({adDiagnostics.length})</summary>
                   <div className="ad-diagnostics-list" dir="ltr">
-                    {adDiagnostics.map((item, index) => (
-                      <div key={index}>{item}</div>
-                    ))}
+                    {adDiagnostics.map((item, index) => <div key={index}>{item}</div>)}
                   </div>
                 </details>
               )}
