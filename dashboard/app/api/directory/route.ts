@@ -98,6 +98,8 @@ export async function POST(request: Request) {
         dnsHostName: String(computer?.dnsHostName || ""),
         distinguishedName: String(computer?.distinguishedName || "")
       }));
+      const adNameSamples = Array.from(names).slice(0, 10);
+      const adDnsSamples = Array.from(dnsNames).slice(0, 10);
       const [inventory, directoryComputers] = await Promise.all([
         all<any>("SELECT nh.ip, nh.hostname, nh.subnet, nh.device_type, nh.last_seen, c.hostname AS agent_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
         all<any>("SELECT name,dns_host_name FROM directory_computers")
