@@ -299,6 +299,8 @@ export default function Home() {
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
           inventoryAdOsDiagnostics: data.inventoryAdOsDiagnostics || [],
           inventoryClassificationDiagnostics: data.inventoryClassificationDiagnostics || [],
+          windowsUnmatchedDiagnostics: data.windowsUnmatchedDiagnostics || [],
+          windowsUnmatchedSamples: data.windowsUnmatchedSamples || [],
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
           reservedInventoryHosts: data.reservedInventoryHosts || 0
         });
@@ -499,7 +501,14 @@ export default function Home() {
                       <>
                         {adMatchDiagnostics.inventoryAdOsDiagnostics?.length > 0 && (
                       <>
-                        <b>طبقه‌بندی نهایی Inventory</b>
+                        {adMatchDiagnostics.windowsUnmatchedDiagnostics?.length > 0 && (
+                      <>
+                        <b>Windows بدون Match با AD</b>
+                        {adMatchDiagnostics.windowsUnmatchedDiagnostics.map((item: any) => <div key={item.reason} dir="ltr">[WIN-UNMATCHED] {item.reason} | {item.total}</div>)}
+                        {adMatchDiagnostics.windowsUnmatchedSamples?.slice(0, 20).map((item: string) => <div key={item} dir="ltr">{item}</div>)}
+                      </>
+                    )}
+                    <b>طبقه‌بندی نهایی Inventory</b>
                         {adMatchDiagnostics.inventoryClassificationDiagnostics?.map((item: any) => <div key={item.classification} dir="ltr">[CLASS] {item.classification} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
                         <b>ارتباط Device با OS در AD</b>
                         {adMatchDiagnostics.inventoryAdOsDiagnostics.map((item: any) => <div key={item.operatingSystem} dir="ltr">[AD-OS] {item.operatingSystem} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
