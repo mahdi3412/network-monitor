@@ -470,30 +470,30 @@ foreach ($serverUrl in $servers) {
     if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
     $connection.Bind()
 
-    $filter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
-    $cookie = [byte[]]::new(0)
-    $computers = [System.Collections.Generic.List[object]]::new()
+    function Escape-LdapFilter([string]$Value) {
+      $sb = New-Object System.Text.StringBuilder
+      foreach ($ch in $Value.ToCharArray()) {
+        switch ([int][char]$ch) {
+          0 { [void]$sb.Append("\\00") }
+          40 { [void]$sb.Append("\\28") }
+          41 { [void]$sb.Append("\\29") }
+          42 { [void]$sb.Append("\\2a") }
+          92 { [void]$sb.Append("\\5c") }
+          default { [void]$sb.Append($ch) }
+        }
+      }
+      $sb.ToString()
+    }
 
-    do {
-    $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
-    $request.DistinguishedName = $baseDn
-    $request.Filter = $filter
-    $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
-    foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
-      $request.SizeLimit = 0
-      $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
-      if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
-      [void]$request.Controls.Add($page)
-      $response = $connection.SendRequest($request)
-
-      foreach ($entry in $response.Entries) {
+    function Add-ComputerEntries($Response, [System.Collections.Generic.List[object]]$Target) {
+      foreach ($entry in $Response.Entries) {
         $dn = if ($entry.DistinguishedName) { [string]$entry.DistinguishedName } else { First-AttributeValue $entry "distinguishedName" }
         $name = First-AttributeValue $entry "name"
         $dns = First-AttributeValue $entry "dNSHostName"
         if (-not $name -and $dn -match '^CN=([^,]+)') { $name = $Matches[1].Trim() }
         if (-not $name -and $dns) { $name = ($dns -split '\.')[0] }
         if (-not $name -and -not $dns) { continue }
-        $computers.Add([PSCustomObject]@{
+        $Target.Add([PSCustomObject]@{
           name = $name;
           dnsHostName = $dns;
           operatingSystem = First-AttributeValue $entry "operatingSystem";
@@ -503,18 +503,115 @@ foreach ($serverUrl in $servers) {
           distinguishedName = $dn
         })
       }
-      $pageResponse = $null
-      for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
-        $control = $response.Controls[$controlIndex]
-        if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
-          $pageResponse = $control
-          break
-        }
-      }
-      $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
-    } while ($cookie.Length -gt 0)
+    }
 
-    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($computers) } | ConvertTo-Json -Compress -Depth 6
+    function Search-ComputerPartition([string]$Prefix) {
+      $escapedPrefix = Escape-LdapFilter $Prefix
+      $filter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*)(name=$escapedPrefix*))"
+      $cookie = [byte[]]::new(0)
+      $entries = [System.Collections.Generic.List[object]]::new()
+
+      do {
+        $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
+        $request.DistinguishedName = $baseDn
+        $request.Filter = $filter
+        $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
+        foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
+        $request.SizeLimit = 0
+        $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
+        if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
+        [void]$request.Controls.Add($page)
+        $response = $connection.SendRequest($request)
+        Add-ComputerEntries $response $entries
+
+        $pageResponse = $null
+        for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
+          $control = $response.Controls[$controlIndex]
+          if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
+            $pageResponse = $control
+            break
+          }
+        }
+        $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
+      } while ($cookie.Length -gt 0)
+
+      return @($entries)
+    }
+
+    function Search-ComputerPrefix([string]$Prefix, [int]$Depth = 0) {
+      if ($Depth -ge 64) {
+        throw "Active Directory computer partition '$Prefix' reached the maximum prefix depth."
+      }
+
+      $entries = @(Search-ComputerPartition $Prefix)
+
+      # This DC accepts the LDAP paging control but returns an empty cookie at
+      # the server-side 1000-record boundary. Split full partitions by name
+      # prefix so the search can continue without relying on that cookie.
+      if ($entries.Count -lt 1000) {
+        return $entries
+      }
+
+      $children = @("0","1","2","3","4","5","6","7","8","9","a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","-","_")
+      $result = [System.Collections.Generic.List[object]]::new()
+      foreach ($child in $children) {
+        $childEntries = @(Search-ComputerPrefix ($Prefix + $child) ($Depth + 1))
+        foreach ($entry in $childEntries) { $result.Add($entry) }
+      }
+
+      if ($Depth -eq 0) {
+        $escapedExclusions = $children | ForEach-Object { "(name=$(Escape-LdapFilter $_)* )" }
+        $specialFilter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*)(!(name=0*))(!(name=1*))(!(name=2*))(!(name=3*))(!(name=4*))(!(name=5*))(!(name=6*))(!(name=7*))(!(name=8*))(!(name=9*))(!(name=a*))(!(name=b*))(!(name=c*))(!(name=d*))(!(name=e*))(!(name=f*))(!(name=g*))(!(name=h*))(!(name=i*))(!(name=j*))(!(name=k*))(!(name=l*))(!(name=m*))(!(name=n*))(!(name=o*))(!(name=p*))(!(name=q*))(!(name=r*))(!(name=s*))(!(name=t*))(!(name=u*))(!(name=v*))(!(name=w*))(!(name=x*))(!(name=y*))(!(name=z*))(!(name=-*))(!(name=_*)))"
+        $cookie = [byte[]]::new(0)
+        $specialEntries = [System.Collections.Generic.List[object]]::new()
+        do {
+          $request = [System.DirectoryServices.Protocols.SearchRequest]::new()
+          $request.DistinguishedName = $baseDn
+          $request.Filter = $specialFilter
+          $request.Scope = [System.DirectoryServices.Protocols.SearchScope]::Subtree
+          foreach ($property in [string[]]$properties) { [void]$request.Attributes.Add($property) }
+          $request.SizeLimit = 0
+          $page = [System.DirectoryServices.Protocols.PageResultRequestControl]::new([int]1000)
+          if ($cookie.Length -gt 0) { $page.Cookie = $cookie }
+          [void]$request.Controls.Add($page)
+          $response = $connection.SendRequest($request)
+          Add-ComputerEntries $response $specialEntries
+          $pageResponse = $null
+          for ($controlIndex = 0; $controlIndex -lt $response.Controls.Count; $controlIndex++) {
+            $control = $response.Controls[$controlIndex]
+            if ($control.GetType().FullName -eq "System.DirectoryServices.Protocols.PageResultResponseControl") {
+              $pageResponse = $control
+              break
+            }
+          }
+          $cookie = if ($null -ne $pageResponse -and $null -ne $pageResponse.Cookie) { [byte[]]$pageResponse.Cookie } else { [byte[]]::new(0) }
+        } while ($cookie.Length -gt 0)
+        if ($specialEntries.Count -ge 1000) {
+          throw "Active Directory returned 1000+ computers with non-alphanumeric names; the partition requires a narrower LDAP strategy."
+        }
+        foreach ($entry in $specialEntries) { $result.Add($entry) }
+      }
+
+      return @($result)
+    }
+
+    $rootEntries = @(Search-ComputerPartition "")
+    $computers = [System.Collections.Generic.List[object]]::new()
+
+    if ($rootEntries.Count -lt 1000) {
+      foreach ($entry in $rootEntries) { $computers.Add($entry) }
+    } else {
+      foreach ($entry in @(Search-ComputerPrefix "")) { $computers.Add($entry) }
+    }
+
+    $uniqueComputers = [System.Collections.Generic.List[object]]::new()
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    foreach ($computer in $computers) {
+      $key = if ($computer.distinguishedName) { [string]$computer.distinguishedName } else { "$($computer.name)|$($computer.dnsHostName)" }
+      if ($seen.Add($key)) { $uniqueComputers.Add($computer) }
+    }
+
+    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($uniqueComputers) } | ConvertTo-Json -Compress -Depth 6
     exit
   } catch {
     $detail = $_.Exception; $ldap = $_.Exception.InnerException
