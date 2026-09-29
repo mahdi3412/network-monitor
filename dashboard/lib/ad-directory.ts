@@ -639,7 +639,7 @@ throw "All configured Active Directory servers failed."
   const scriptPath = path.join(tempDir, "sync-computers.ps1");
   try {
     await fs.promises.writeFile(scriptPath, script, "utf8");
-    const { stdout, stderr } = await execFileAsync("powershell.exe", ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",scriptPath], { windowsHide: true, timeout: 120000, env });
+    const { stdout, stderr } = await execFileAsync("powershell.exe", ["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",scriptPath], { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024, env });
     const output = String(stdout || "").trim();
     if (!output) throw new Error(String(stderr || "").trim() || "Active Directory returned an empty response.");
     const parsed = JSON.parse(output);
