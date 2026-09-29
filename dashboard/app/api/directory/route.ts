@@ -432,6 +432,21 @@ export async function POST(request: Request) {
 
         inventoryBySubnet.set(subnetKey, subnetStats);
         inventoryByDeviceType.set(deviceTypeKey, deviceStats);
+        const adOsCandidate = candidates.map(shortHostname).find((value) => adOsByName.has(value));
+        const adOs = adOsCandidate ? (adOsByName.get(adOsCandidate) || "").toLowerCase() : "";
+        const deviceType = String(host.device_type || "unknown").trim().toLowerCase() || "unknown";
+        const serviceText = String(host.services || "").toLowerCase();
+        let classification = deviceType;
+        if (adOs.includes("windows")) classification = "windows-ad";
+        else if (deviceType === "printer" || serviceText.includes("printer")) classification = "printer";
+        else if (deviceType === "linux-or-network" || serviceText.includes("ssh")) classification = "linux-network";
+        else if (deviceType === "unknown") classification = adOs ? "ad-nonwindows" : "unknown";
+        const classStats = inventoryClassificationDiagnostics.get(classification) || { total: 0, matches: 0, unmatched: 0 };
+        classStats.total += 1;
+        if (ipMatch || hostnameMatch || dnsMatch) classStats.matches += 1;
+        else classStats.unmatched += 1;
+        inventoryClassificationDiagnostics.set(classification, classStats);
+
         const candidateAdName = candidates.map(shortHostname).find((value) => adOsByName.has(value));
         if (candidateAdName) {
           const os = adOsByName.get(candidateAdName) || "unknown";
@@ -458,6 +473,7 @@ export async function POST(request: Request) {
         if (key && os) adOsByName.set(key, os);
       }
       const inventoryAdOsDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
+      const inventoryClassificationDiagnostics = new Map<string, { total: number; matches: number; unmatched: number }>();
 
       const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
         .filter(([, ips]) => ips.size > 1)
@@ -491,7 +507,10 @@ export async function POST(request: Request) {
         inventoryIpUnmatched,
         subnetDiagnostics,
         deviceTypeDiagnostics,
-        inventoryAdOsDiagnostics: Array.from(inventoryAdOsDiagnostics.entries())
+        inventoryClassificationDiagnostics: Array.from(inventoryClassificationDiagnostics.entries())
+          .map(([classification, stats]) => ({ classification, ...stats }))
+          .sort((a, b) => b.total - a.total),
+                inventoryAdOsDiagnostics: Array.from(inventoryAdOsDiagnostics.entries())
           .map(([operatingSystem, stats]) => ({ operatingSystem, ...stats }))
           .sort((a, b) => b.total - a.total),
         adDnsServer,
