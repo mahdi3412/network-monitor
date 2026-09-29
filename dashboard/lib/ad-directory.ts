@@ -459,17 +459,6 @@ foreach ($serverUrl in $servers) {
     $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
     $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
-    if ($authMode -eq "integrated") {
-      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
-      $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
-    } else {
-      $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
-      $connection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
-    }
-    $connection.SessionOptions.ProtocolVersion = 3
-    if ($useSsl) { $connection.SessionOptions.SecureSocketLayer = $true }
-    $connection.Bind()
-
     function Escape-LdapFilter([string]$Value) {
       $sb = New-Object System.Text.StringBuilder
       foreach ($ch in $Value.ToCharArray()) {
@@ -506,18 +495,28 @@ foreach ($serverUrl in $servers) {
     }
 
     function New-AdConnection() {
-      $newConnection = $null
-      $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
-      if ($authMode -eq "integrated") {
-        $newConnection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
-      } else {
-        $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
-        $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+      $lastError = $null
+      for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $newConnection = $null
+        try {
+          if ($authMode -eq "integrated") {
+            $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier)
+            $newConnection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Negotiate
+          } else {
+            $credential = [System.Net.NetworkCredential]::new([string]$bindUser,[string]$bindPassword)
+            $newConnection = [System.DirectoryServices.Protocols.LdapConnection]::new($identifier,$credential,[System.DirectoryServices.Protocols.AuthType]::Negotiate)
+          }
+          $newConnection.SessionOptions.ProtocolVersion = 3
+          if ($useSsl) { $newConnection.SessionOptions.SecureSocketLayer = $true }
+          $newConnection.Bind()
+          return $newConnection
+        } catch {
+          $lastError = $_.Exception
+          if ($null -ne $newConnection) { $newConnection.Dispose() }
+          if ($attempt -lt 3) { Start-Sleep -Seconds (2 * $attempt) }
+        }
       }
-      $newConnection.SessionOptions.ProtocolVersion = 3
-      if ($useSsl) { $newConnection.SessionOptions.SecureSocketLayer = $true }
-      $newConnection.Bind()
-      return $newConnection
+      throw "LDAP bind failed after 3 attempts to $serverUrl. Last error: $($lastError.Message)"
     }
 
     function Search-ComputerPartition([string]$Prefix) {
