@@ -124,6 +124,7 @@ export async function POST(request: Request) {
       const dnsShortNames = new Set<string>();
       const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
+      const adDnsIpConflicts = new Map<string, Set<string>>();
       const computerByName = new Map<string, any>();
       const computerByDns = new Map<string, any>();
 
@@ -197,7 +198,18 @@ export async function POST(request: Request) {
           const addresses = await dns.resolve4(dnsHostName);
           if (addresses.length) {
             adDnsSystemResolved += 1;
-            for (const address of addresses) computersByIp.set(address, computer);
+            for (const address of addresses) {
+              const ip = String(address || "").trim();
+              if (!ip) continue;
+              const existing = computersByIp.get(ip);
+              if (existing && normalizeHostname(existing.name) !== normalizeHostname(computer.name)) {
+                const set = adDnsIpConflicts.get(ip) || new Set<string>();
+                set.add(String(existing.name || existing.dns_host_name || ""));
+                set.add(String(computer.name || computer.dns_host_name || ""));
+                adDnsIpConflicts.set(ip, set);
+              }
+              computersByIp.set(ip, computer);
+            }
             if (adDnsResolutionSamples.length < 10) {
               adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
             }
@@ -379,6 +391,9 @@ export async function POST(request: Request) {
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
 
+      const adDnsIpConflictSamples = Array.from(adDnsIpConflicts.entries())
+        .slice(0, 20)
+        .map(([ip, values]) => `${ip} -> ${Array.from(values).filter(Boolean).join(" / ")}`);
       const adNameSamples = Array.from(names).slice(0, 10);
       const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
@@ -412,6 +427,8 @@ export async function POST(request: Request) {
         matchSamples,
         ipMatchConflicts,
         macMatchConflicts,
+        adDnsIpConflicts: adDnsIpConflicts.size,
+        adDnsIpConflictSamples,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
