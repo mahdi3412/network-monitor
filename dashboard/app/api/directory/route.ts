@@ -213,6 +213,8 @@ export async function POST(request: Request) {
       const unmatchedSamples: string[] = [];
       const unmatchedDiagnostics: string[] = [];
       const unmatchedByDeviceType: string[] = [];
+      const unmatchedReasonCounts = { noHostname: 0, hostnameNotInAd: 0, dnsUnresolved: 0, ipNotResolvedInAdDns: 0, nonWindowsOrUnknown: 0 };
+      const unmatchedReasonSamples = { noHostname: [] as string[], hostnameNotInAd: [] as string[], dnsUnresolved: [] as string[], ipNotResolvedInAdDns: [] as string[], nonWindowsOrUnknown: [] as string[] };
       const matchedSamples: string[] = [];
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
@@ -291,13 +293,23 @@ export async function POST(request: Request) {
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
           inventoryIpUnmatched += 1;
+          const reverseNames = inventoryReverseNames.get(normalizedIp) || [];
+          const shortCandidates = candidates.map(shortHostname).filter(Boolean);
+          const hasHostname = candidates.length > 0;
+          const hasAdHostname = shortCandidates.some((value) => names.has(value) || dnsShortNames.has(value) || dnsNames.has(value));
+          let unmatchedReason: keyof typeof unmatchedReasonCounts;
+          if (!hasHostname) unmatchedReason = "noHostname";
+          else if (!hasAdHostname) unmatchedReason = "hostnameNotInAd";
+          else if (reverseNames.length === 0 && !computersByIp.has(normalizedIp)) unmatchedReason = "dnsUnresolved";
+          else if (adDnsServerResolved && !computersByIp.has(normalizedIp)) unmatchedReason = "ipNotResolvedInAdDns";
+          else unmatchedReason = "nonWindowsOrUnknown";
+          unmatchedReasonCounts[unmatchedReason] += 1;
+          if (unmatchedReasonSamples[unmatchedReason].length < 10) unmatchedReasonSamples[unmatchedReason].push(`${normalizedIp} | ${candidates.join(",") || "-"}`);
           if (unmatchedSamples.length < 10) {
             const sample = `${host.ip} | ${candidates.join(" / ") || "بدون hostname"}`;
             if (!unmatchedSamples.includes(sample)) unmatchedSamples.push(sample);
           }
           if (unmatchedDiagnostics.length < 20) {
-            const reverseNames = inventoryReverseNames.get(normalizedIp) || [];
-            const shortCandidates = candidates.map(shortHostname).filter(Boolean);
             const adByName = shortCandidates
               .map((value) => computerByName.get(value) || computerByDnsShort.get(value))
               .filter(Boolean)
@@ -367,6 +379,8 @@ export async function POST(request: Request) {
         ipMatchConflicts,
         unmatchedSamples,
         unmatchedDiagnostics,
+        unmatchedReasonCounts,
+        unmatchedReasonSamples,
         unmatchedByDeviceType,
         matchedSamples
       });
