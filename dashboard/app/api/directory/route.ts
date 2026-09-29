@@ -143,6 +143,25 @@ export async function POST(request: Request) {
       let adDnsUnresolved = 0;
       const adDnsResolutionSamples: string[] = [];
 
+      // Reverse-resolve inventory IPs against the AD DNS server so hosts with
+      // missing agent-side hostnames can still be matched to AD computers.
+      const inventoryReverseNames = new Map<string, string[]>();
+      if (adDnsServerResolved) {
+        await Promise.all(inventory.map(async (host: any) => {
+          const ip = String(host?.ip || "").trim();
+          if (!ip) return;
+          try {
+            const names = await adDnsResolver.reverse(ip);
+            if (names.length) {
+              inventoryReverseNames.set(
+                ip,
+                names.map(normalizeHostname).filter(Boolean)
+              );
+            }
+          } catch {}
+        }));
+      }
+
       // Forward-resolve only through the normal resolver first. Direct AD DNS
       // lookups are deliberately avoided for every AD computer because a large
       // number of missing DNS records can make the sync wait on resolver timeouts.
@@ -167,9 +186,6 @@ export async function POST(request: Request) {
         if (adDnsResolutionSamples.length < 10) adDnsResolutionSamples.push(dnsHostName);
       }));
 
-      const adNameSamples = Array.from(names).slice(0, 10);
-      const adDnsSamples = Array.from(dnsNames).slice(0, 10);
-
       const matchedIps = new Set<string>();
       let hostsWithHostname = 0;
       let hostnameMatches = 0;
@@ -180,8 +196,6 @@ export async function POST(request: Request) {
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
       const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
-      const adNameSamples = Array.from(names).slice(0, 10);
-      const adDnsSamples = Array.from(dnsNames).slice(0, 10);
 
       for (const host of inventory) {
         const subnetKey = String(host.subnet || "بدون subnet");
