@@ -319,11 +319,24 @@ export async function POST(request: Request) {
           const hasHostname = candidates.length > 0;
           const hasAdHostname = shortCandidates.some((value) => names.has(value) || dnsShortNames.has(value) || dnsNames.has(value));
           let unmatchedReason: keyof typeof unmatchedReasonCounts;
-          if (!hasHostname) unmatchedReason = "noHostname";
-          else if (!hasAdHostname) unmatchedReason = "hostnameNotInAd";
-          else if (reverseNames.length === 0 && !computersByIp.has(normalizedIp)) unmatchedReason = "dnsUnresolved";
-          else if (adDnsServerResolved && !computersByIp.has(normalizedIp)) unmatchedReason = "ipNotResolvedInAdDns";
-          else unmatchedReason = "nonWindowsOrUnknown";
+          const ipResolvedInAdDns = computersByIp.has(normalizedIp);
+          const reverseResolved = reverseNames.length > 0;
+          const macConfirmedHostname = macClient?.agent_hostname ? normalizeHostname(macClient.agent_hostname) : "";
+          const macConfirmedAdHostname = macConfirmedHostname
+            ? names.has(shortHostname(macConfirmedHostname)) || dnsShortNames.has(shortHostname(macConfirmedHostname)) || dnsNames.has(macConfirmedHostname)
+            : false;
+
+          if (!hasHostname) {
+            unmatchedReason = "noHostname";
+          } else if (!hasAdHostname && !macConfirmedAdHostname) {
+            unmatchedReason = "hostnameNotInAd";
+          } else if (adDnsServerResolved && !ipResolvedInAdDns && !reverseResolved) {
+            unmatchedReason = "ipNotResolvedInAdDns";
+          } else if (!reverseResolved && !ipResolvedInAdDns) {
+            unmatchedReason = "dnsUnresolved";
+          } else {
+            unmatchedReason = "nonWindowsOrUnknown";
+          }
           unmatchedReasonCounts[unmatchedReason] += 1;
           if (unmatchedReasonSamples[unmatchedReason].length < 10) unmatchedReasonSamples[unmatchedReason].push(`${normalizedIp} | ${candidates.join(",") || "-"}`);
           if (unmatchedSamples.length < 10) {
