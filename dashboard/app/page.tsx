@@ -298,6 +298,7 @@ export default function Home() {
           unmatchedReasonSamples: data.unmatchedReasonSamples || {},
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
           inventoryAdOsDiagnostics: data.inventoryAdOsDiagnostics || [],
+          inventoryClassificationDiagnostics: data.inventoryClassificationDiagnostics || [],
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
           reservedInventoryHosts: data.reservedInventoryHosts || 0
         });
@@ -498,6 +499,8 @@ export default function Home() {
                       <>
                         {adMatchDiagnostics.inventoryAdOsDiagnostics?.length > 0 && (
                       <>
+                        <b>طبقه‌بندی نهایی Inventory</b>
+                        {adMatchDiagnostics.inventoryClassificationDiagnostics?.map((item: any) => <div key={item.classification} dir="ltr">[CLASS] {item.classification} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
                         <b>ارتباط Device با OS در AD</b>
                         {adMatchDiagnostics.inventoryAdOsDiagnostics.map((item: any) => <div key={item.operatingSystem} dir="ltr">[AD-OS] {item.operatingSystem} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
                       </>
