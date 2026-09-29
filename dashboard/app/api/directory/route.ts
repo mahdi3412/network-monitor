@@ -193,6 +193,7 @@ export async function POST(request: Request) {
       let ipMatches = 0;
       const unmatchedSamples: string[] = [];
       const unmatchedDiagnostics: string[] = [];
+      const unmatchedByDeviceType: string[] = [];
       const matchedSamples: string[] = [];
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
@@ -277,7 +278,10 @@ export async function POST(request: Request) {
               `reverse=${reverseNames.join(",") || "-"}`,
               `candidates=${candidates.join(",") || "-"}`,
               `AD-name=${adByName.join(",") || "-"}`,
-              `AD-dns=${adByDns.join(",") || "-"}`
+              `AD-dns=${adByDns.join(",") || "-"}`,
+              `mac=${String(host.mac || "-")}`,
+              `method=${String(host.method || "-")}`,
+              `type=${String(host.device_type || "-")}`
             ].join(" | ");
             if (!unmatchedDiagnostics.includes(details)) unmatchedDiagnostics.push(details);
           }
@@ -324,6 +328,7 @@ export async function POST(request: Request) {
         adDnsResolutionSamples,
         unmatchedSamples,
         unmatchedDiagnostics,
+        unmatchedByDeviceType,
         matchedSamples
       });
     }
