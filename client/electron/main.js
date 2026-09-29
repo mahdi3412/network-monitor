@@ -105,6 +105,12 @@ function collect() {
     gateway: networkInfo.gateway, dns: networkInfo.dns || getDnsServers(), agentVersion: c.agentVersion
   };
 }
+function isReservedInventoryIp(ip){
+  const parts=String(ip||"").trim().split(".");
+  if(parts.length!==4||parts.some(part=>!/^[0-9]+$/.test(part)))return false;
+  const last=Number(parts[3]);
+  return last>=1&&last<=11||last>=241&&last<=254;
+}
 function ipv4ToInt(ip){return ip.split(".").reduce((n,o)=>(n<<8)+Number(o),0)>>>0}
 function intToIpv4(n){return [(n>>>24)&255,(n>>>16)&255,(n>>>8)&255,n&255].join(".")}
 function subnetRange(ip,mask){const i=ipv4ToInt(ip),m=ipv4ToInt(mask),network=(i&m)>>>0,broadcast=(network|(~m>>>0))>>>0;return{network,broadcast}}
@@ -213,7 +219,7 @@ async function scanNetwork(){
     const results=new Map();
     for(const target of unique.values()){
       runtime.scanRange=target.subnet;publish();
-      const ips=[];for(let n=target.network+1;n<target.broadcast;n++)ips.push(intToIpv4(n));
+      const ips=[];for(let n=target.network+1;n<target.broadcast;n++){const ip=intToIpv4(n);if(!isReservedInventoryIp(ip))ips.push(ip);}
       for(let i=0;i<ips.length;i+=48){
         const batch=await Promise.all(ips.slice(i,i+48).map(pingHost));
         for(const r of batch)if(r.reachable){const a=byIp.get(r.ip);results.set(r.ip,{...r,mac:a?.mac||"",adapter:target.adapter,subnet:target.subnet});}
@@ -226,7 +232,7 @@ async function scanNetwork(){
         if(target)results.set(a.ip,{ip:a.ip,hostname:"",mac:a.mac,latencyMs:null,reachable:true,method:"arp",adapter:target.adapter,subnet:target.subnet});
       }else if(a.mac)results.get(a.ip).mac=a.mac;
     }
-    const candidates=[...results.values()];
+    const candidates=[...results.values()].filter(r=>!isReservedInventoryIp(r.ip));
     for(let i=0;i<candidates.length;i+=12){
       await Promise.all(candidates.slice(i,i+12).map(async r=>{
         if(!r.hostname){
