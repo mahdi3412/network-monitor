@@ -297,6 +297,7 @@ export default function Home() {
           unmatchedReasonCounts: data.unmatchedReasonCounts || {},
           unmatchedReasonSamples: data.unmatchedReasonSamples || {},
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
+          inventoryAdOsDiagnostics: data.inventoryAdOsDiagnostics || [],
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
           reservedInventoryHosts: data.reservedInventoryHosts || 0
         });
@@ -495,7 +496,13 @@ export default function Home() {
                       <>
                         {adMatchDiagnostics.inventoryDnsDiagnostics?.length > 0 && (
                       <>
-                        <b>نمونه DNS/IP ناسازگار</b>
+                        {adMatchDiagnostics.inventoryAdOsDiagnostics?.length > 0 && (
+                      <>
+                        <b>ارتباط Device با OS در AD</b>
+                        {adMatchDiagnostics.inventoryAdOsDiagnostics.map((item: any) => <div key={item.operatingSystem} dir="ltr">[AD-OS] {item.operatingSystem} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
+                      </>
+                    )}
+                    <b>نمونه DNS/IP ناسازگار</b>
                         {adMatchDiagnostics.inventoryDnsDiagnostics.slice(0, 20).map((item: any) => <div key={item.ip + item.hostname} dir="ltr">[DNS-IP] {item.ip} | {item.hostname} | DNS: {item.resolvedIps.join(", ")}</div>)}
                       </>
                     )}
