@@ -301,6 +301,7 @@ export default function Home() {
           inventoryClassificationDiagnostics: data.inventoryClassificationDiagnostics || [],
           windowsUnmatchedDiagnostics: data.windowsUnmatchedDiagnostics || [],
           windowsUnmatchedSamples: data.windowsUnmatchedSamples || [],
+          agentAdDiagnostics: data.agentAdDiagnostics || [],
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
           reservedInventoryHosts: data.reservedInventoryHosts || 0
         });
@@ -503,6 +504,8 @@ export default function Home() {
                       <>
                         {adMatchDiagnostics.windowsUnmatchedDiagnostics?.length > 0 && (
                       <>
+                        <b>Agent ↔ AD</b>
+                        {adMatchDiagnostics.agentAdDiagnostics?.slice(0, 30).map((item: any) => <div key={item.hostname + item.ip} dir="ltr">[AGENT-AD] {item.hostname || "-"} | IP={item.ip || "-"} | MAC={item.mac || "-"} | AD-name={item.adByName || "-"} | AD-IP={item.adByIp || "-"}</div>)}
                         <b>Windows بدون Match با AD</b>
                         {adMatchDiagnostics.windowsUnmatchedDiagnostics.map((item: any) => <div key={item.reason} dir="ltr">[WIN-UNMATCHED] {item.reason} | {item.total}</div>)}
                         {adMatchDiagnostics.windowsUnmatchedSamples?.slice(0, 20).map((item: string) => <div key={item} dir="ltr">{item}</div>)}
