@@ -22,6 +22,13 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function isReservedInventoryIp(value: unknown): boolean {
+  const parts = String(value || "").trim().split(".");
+  if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false;
+  const lastOctet = Number(parts[3]);
+  return lastOctet >= 1 && lastOctet <= 11 || lastOctet >= 241 && lastOctet <= 254;
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -149,7 +156,7 @@ export async function POST(request: Request) {
       if (adDnsServerResolved) {
         await Promise.all(inventory.map(async (host: any) => {
           const ip = String(host?.ip || "").trim();
-          if (!ip) return;
+          if (!ip || isReservedInventoryIp(ip)) return;
           try {
             const names = await adDnsResolver.reverse(ip);
             if (names.length) {
@@ -187,6 +194,8 @@ export async function POST(request: Request) {
       }));
 
       const matchedIps = new Set<string>();
+      let reservedInventoryHosts = 0;
+      let eligibleInventoryHosts = 0;
       let hostsWithHostname = 0;
       let hostnameMatches = 0;
       let dnsMatches = 0;
@@ -200,6 +209,13 @@ export async function POST(request: Request) {
       const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
 
       for (const host of inventory) {
+        const normalizedIp = String(host.ip || "").trim();
+        if (isReservedInventoryIp(normalizedIp)) {
+          reservedInventoryHosts += 1;
+          continue;
+        }
+        eligibleInventoryHosts += 1;
+
         const subnetKey = String(host.subnet || "بدون subnet");
         const subnetStats = inventoryBySubnet.get(subnetKey) || { total: 0, ipMatches: 0, withHostname: 0 };
         subnetStats.total += 1;
@@ -223,7 +239,6 @@ export async function POST(request: Request) {
 
         // IP matching must not depend on reverse-DNS/NBT hostname availability.
         // A host can be an AD computer even when its inventory hostname is empty.
-        const normalizedIp = String(host.ip || "").trim();
         const ipMatch = computersByIp.has(normalizedIp);
         let hostnameMatch = false;
         let dnsMatch = false;
@@ -312,6 +327,8 @@ export async function POST(request: Request) {
         adDnsSamples,
         matchedInventory: matchedIps.size,
         inventoryHosts: inventory.length,
+        eligibleInventoryHosts,
+        reservedInventoryHosts,
         inventoryHostsWithHostname: hostsWithHostname,
         hostnameMatches,
         dnsMatches,
