@@ -477,7 +477,7 @@ export async function POST(request: Request) {
             reason = "hostname-not-in-ad";
           } else if (forwardIps.length && !forwardIps.includes(normalizedIp)) {
             reason = "dns-ip-mismatch";
-          } else if (adDnsServerResolved && !ipResolvedInAdDns) {
+          } else if (adDnsServerResolved && !computersByIp.has(normalizedIp)) {
             reason = "not-resolved-in-ad-dns";
           }
           windowsUnmatchedDiagnostics.set(reason, (windowsUnmatchedDiagnostics.get(reason) || 0) + 1);
@@ -563,7 +563,6 @@ export async function POST(request: Request) {
         matchMethodCounts,
         matchSamples,
         ipMatchConflicts,
-        macMatchConflicts,
         adDnsIpConflicts: adDnsIpConflicts.size,
         adDnsIpConflictSamples,
         adComputerMultiIpCount,
@@ -576,7 +575,6 @@ export async function POST(request: Request) {
         unmatchedDiagnostics,
         unmatchedReasonCounts,
         unmatchedReasonSamples,
-        unmatchedByDeviceType,
         matchedSamples
       });
     }
