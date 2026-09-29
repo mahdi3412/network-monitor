@@ -208,8 +208,10 @@ export async function POST(request: Request) {
       let dnsMatches = 0;
       let ipMatches = 0;
       let ipMatchConflicts = 0;
-      const matchMethodCounts = { ip: 0, hostname: 0, dns: 0 };
-      const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[] };
+      const matchMethodCounts = { ip: 0, hostname: 0, dns: 0, mac: 0 };
+      const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[], mac: [] as string[] };
+      const macMatchConflicts = { ip: 0, hostname: 0, dns: 0 };
+
       const unmatchedSamples: string[] = [];
       const unmatchedDiagnostics: string[] = [];
       const unmatchedByDeviceType: string[] = [];
@@ -253,6 +255,9 @@ export async function POST(request: Request) {
         // A host can be an AD computer even when its inventory hostname is empty.
         const ipComputer = computersByIp.get(normalizedIp);
         const ipMatch = Boolean(ipComputer);
+          const hostMac = String(host?.mac || "").trim().toLowerCase();
+          const macComputer = hostMac ? computerByMac.get(hostMac) : undefined;
+          const macMatch = Boolean(macComputer);
         let hostnameMatch = false;
         let dnsMatch = false;
         let matchedCandidate = ipMatch ? `${host.ip} -> ${ipComputer?.name || ipComputer?.dns_host_name || ""}` : "";
@@ -377,6 +382,7 @@ export async function POST(request: Request) {
         matchMethodCounts,
         matchSamples,
         ipMatchConflicts,
+        macMatchConflicts,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
