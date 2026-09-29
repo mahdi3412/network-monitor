@@ -207,6 +207,9 @@ export async function POST(request: Request) {
       let hostnameMatches = 0;
       let dnsMatches = 0;
       let ipMatches = 0;
+      let ipMatchConflicts = 0;
+      const matchMethodCounts = { ip: 0, hostname: 0, dns: 0 };
+      const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[] };
       const unmatchedSamples: string[] = [];
       const unmatchedDiagnostics: string[] = [];
       const unmatchedByDeviceType: string[] = [];
@@ -246,10 +249,11 @@ export async function POST(request: Request) {
 
         // IP matching must not depend on reverse-DNS/NBT hostname availability.
         // A host can be an AD computer even when its inventory hostname is empty.
-        const ipMatch = computersByIp.has(normalizedIp);
+        const ipComputer = computersByIp.get(normalizedIp);
+        const ipMatch = Boolean(ipComputer);
         let hostnameMatch = false;
         let dnsMatch = false;
-        let matchedCandidate = ipMatch ? `${host.ip} -> ${computersByIp.get(host.ip)?.name || ""}` : "";
+        let matchedCandidate = ipMatch ? `${host.ip} -> ${ipComputer?.name || ipComputer?.dns_host_name || ""}` : "";
 
         for (const candidate of candidates) {
           if (ipMatch) break;
@@ -272,12 +276,19 @@ export async function POST(request: Request) {
             ipMatches += 1;
             subnetStats.ipMatches += 1;
             deviceStats.ipMatches += 1;
+            matchMethodCounts.ip += 1;
+            if (hostnameMatch || dnsMatch) ipMatchConflicts += 1;
+            if (matchSamples.ip.length < 10) matchSamples.ip.push(matchedCandidate);
           } else if (hostnameMatch) {
             hostnameMatches += 1;
+            matchMethodCounts.hostname += 1;
+            if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
           } else {
             dnsMatches += 1;
+            matchMethodCounts.dns += 1;
+            if (matchSamples.dns.length < 10) matchSamples.dns.push(`${matchedCandidate} -> ${host.ip}`);
           }
-            if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
+          if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
           inventoryIpUnmatched += 1;
           if (unmatchedSamples.length < 10) {
@@ -351,6 +362,9 @@ export async function POST(request: Request) {
         adDnsDirectResolved,
         adDnsUnresolved,
         adDnsResolutionSamples,
+        matchMethodCounts,
+        matchSamples,
+        ipMatchConflicts,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedByDeviceType,
