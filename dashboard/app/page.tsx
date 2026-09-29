@@ -286,6 +286,8 @@ export default function Home() {
           matchMethodCounts: data.matchMethodCounts || {},
           matchSamples: data.matchSamples || {},
           ipMatchConflicts: data.ipMatchConflicts || 0,
+          adDnsIpConflicts: data.adDnsIpConflicts || 0,
+          adDnsIpConflictSamples: data.adDnsIpConflictSamples || [],
           unmatchedReasonCounts: data.unmatchedReasonCounts || {},
           unmatchedReasonSamples: data.unmatchedReasonSamples || {},
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
@@ -465,10 +467,16 @@ export default function Home() {
                   <summary>تحلیل تطبیق AD</summary>
                   <div className="ad-diagnostics-list" dir="rtl">
                     <div><b>میزبان قابل بررسی:</b> {adMatchDiagnostics.eligibleInventoryHosts} · <b>رزرو شده:</b> {adMatchDiagnostics.reservedInventoryHosts}</div>
-                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts}</div>
+                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts}</div>
                     <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
+                    {adMatchDiagnostics.adDnsIpConflictSamples?.length > 0 && (
+                      <>
+                        <b>نمونه IPهای دارای چند Computer در AD DNS</b>
+                        {adMatchDiagnostics.adDnsIpConflictSamples.map((item: string) => <div key={item} dir="ltr">[AD-DNS-CONFLICT] {item}</div>)}
+                      </>
+                    )}
                     <b>نمونه‌های Match</b>
                     {Object.entries(adMatchDiagnostics.matchSamples || {}).flatMap(([method, samples]: any) => (samples || []).map((item: string) => (
                       <div key={`${method}-${item}`} dir="ltr">[{method}] {item}</div>
