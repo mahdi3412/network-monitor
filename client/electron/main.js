@@ -235,8 +235,16 @@ async function scanNetwork(){
         if(process.platform==="win32"&&!r.hostname){
           try{
             const out=await new Promise(resolve=>execFile("nbtstat",["-A",r.ip],{windowsHide:true,timeout:1800},(_,stdout)=>resolve(String(stdout||""))));
-            const m=String(out).match(/(?:^|\s)([A-Za-z0-9._-]+)\s+<00>\s+UNIQUE/i);
-            if(m)r.hostname=m[1];
+            const lines=String(out).split(/\r?\n/);
+            for(const line of lines){
+              const m=line.match(/^\s*([A-Za-z0-9._-]{1,63})\s+<00>\s+(.+)$/i);
+              if(!m)continue;
+              const name=m[1].trim();
+              const flags=m[2].trim();
+              if(!name||/^__MSBROWSE__$/i.test(name)||/GROUP/i.test(flags))continue;
+              r.hostname=name;
+              break;
+            }
           }catch{}
         }
         const enriched=await enrichHost(r);
