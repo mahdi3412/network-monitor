@@ -292,6 +292,8 @@ export default function Home() {
           adComputerMultiIpDiagnostics: data.adComputerMultiIpDiagnostics || [],
           identityConflicts: data.identityConflicts || {},
           identityConflictSamples: data.identityConflictSamples || [],
+          inventoryDnsIpConflicts: data.inventoryDnsIpConflicts || 0,
+          inventoryDnsDiagnostics: data.inventoryDnsDiagnostics || [],
           unmatchedReasonCounts: data.unmatchedReasonCounts || {},
           unmatchedReasonSamples: data.unmatchedReasonSamples || {},
           deviceTypeDiagnostics: data.deviceTypeDiagnostics || [],
@@ -471,7 +473,7 @@ export default function Home() {
                   <summary>تحلیل تطبیق AD</summary>
                   <div className="ad-diagnostics-list" dir="rtl">
                     <div><b>میزبان قابل بررسی:</b> {adMatchDiagnostics.eligibleInventoryHosts} · <b>رزرو شده:</b> {adMatchDiagnostics.reservedInventoryHosts}</div>
-                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts} · <b>یک AD با چند IP:</b> {adMatchDiagnostics.adComputerMultiIpCount} · <b>Conflict هویت:</b> MAC/IP={adMatchDiagnostics.identityConflicts.macVsIp || 0} · MAC/نام={adMatchDiagnostics.identityConflicts.macVsHostname || 0}</div>
+                    <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts} · <b>یک AD با چند IP:</b> {adMatchDiagnostics.adComputerMultiIpCount} · <b>Conflict هویت:</b> MAC/IP={adMatchDiagnostics.identityConflicts.macVsIp || 0} · MAC/نام={adMatchDiagnostics.identityConflicts.macVsHostname || 0} · <b>DNS/IP ناسازگار:</b> {adMatchDiagnostics.inventoryDnsIpConflicts || 0}</div>
                     <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
@@ -491,7 +493,13 @@ export default function Home() {
                     )}
                     {adMatchDiagnostics.identityConflictSamples?.length > 0 && (
                       <>
-                        <b>نمونه Conflict هویت</b>
+                        {adMatchDiagnostics.inventoryDnsDiagnostics?.length > 0 && (
+                      <>
+                        <b>نمونه DNS/IP ناسازگار</b>
+                        {adMatchDiagnostics.inventoryDnsDiagnostics.slice(0, 20).map((item: any) => <div key={item.ip + item.hostname} dir="ltr">[DNS-IP] {item.ip} | {item.hostname} | DNS: {item.resolvedIps.join(", ")}</div>)}
+                      </>
+                    )}
+                    <b>نمونه Conflict هویت</b>
                         {adMatchDiagnostics.identityConflictSamples.map((item: string) => <div key={item} dir="ltr">[IDENTITY-CONFLICT] {item}</div>)}
                       </>
                     )}
