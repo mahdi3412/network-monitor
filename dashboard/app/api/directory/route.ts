@@ -99,7 +99,7 @@ export async function POST(request: Request) {
         distinguishedName: String(computer?.distinguishedName || "")
       }));
       const [inventory, directoryComputers] = await Promise.all([
-        all<any>("SELECT nh.ip, nh.hostname, c.hostname AS agent_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
+        all<any>("SELECT nh.ip, nh.hostname, nh.subnet, nh.device_type, nh.last_seen, c.hostname AS agent_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
         all<any>("SELECT name,dns_host_name FROM directory_computers")
       ]);
 
@@ -165,6 +165,20 @@ export async function POST(request: Request) {
         if (dns) dnsNames.add(dns);
       }
 
+      // Reverse-resolve inventory IPs against the AD DNS server. Agent-side reverse DNS
+      // is often unavailable, while the DC's DNS zone can still know the workstation name.
+      const inventoryReverseNames = new Map<string, string[]>();
+      if (adDnsServerResolved) {
+        await Promise.all(inventory.map(async (host: any) => {
+          const ip = String(host?.ip || "").trim();
+          if (!ip) return;
+          try {
+            const names = await adDnsResolver.reverse(ip);
+            if (names.length) inventoryReverseNames.set(ip, names.map(normalizeHostname).filter(Boolean));
+          } catch {}
+        }));
+      }
+
       const matchedIps = new Set<string>();
       let hostsWithHostname = 0;
       let hostnameMatches = 0;
@@ -187,9 +201,13 @@ export async function POST(request: Request) {
         const deviceStats = inventoryByDeviceType.get(deviceTypeKey) || { total: 0, ipMatches: 0 };
         deviceStats.total += 1;
 
-        const candidates = [host.hostname]
+        const candidates = [
+          host.hostname,
+          ...(inventoryReverseNames.get(String(host.ip || "").trim()) || [])
+        ]
           .map(normalizeHostname)
-          .filter(Boolean);
+          .filter(Boolean)
+          .filter((value, index, values) => values.indexOf(value) === index);
 
         if (candidates.length) {
           hostsWithHostname += 1;
