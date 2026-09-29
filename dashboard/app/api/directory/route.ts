@@ -22,6 +22,10 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function normalizeMac(value: unknown): string {
+  return String(value || "").trim().toLowerCase().replace(/[^0-9a-f]/g, "");
+}
+
 function isReservedInventoryIp(value: unknown): boolean {
   const parts = String(value || "").trim().split(".");
   if (parts.length !== 4 || parts.some((part) => !/^\d+$/.test(part))) return false;
@@ -106,12 +110,17 @@ export async function POST(request: Request) {
         distinguishedName: String(computer?.distinguishedName || "")
       }));
       const [inventory, directoryComputers] = await Promise.all([
-        all<any>("SELECT nh.ip, nh.hostname, nh.subnet, nh.device_type, nh.last_seen, c.hostname AS agent_hostname FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
+        all<any>("SELECT nh.ip, nh.hostname, nh.mac, nh.subnet, nh.device_type, nh.last_seen, c.hostname AS agent_hostname, c.mac AS agent_mac FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
         all<any>("SELECT name,dns_host_name FROM directory_computers")
       ]);
 
       const names = new Set<string>();
       const dnsNames = new Set<string>();
+      const clientByMac = new Map<string, any>();
+      for (const host of inventory) {
+        const mac = normalizeMac(host?.agent_mac);
+        if (mac && host?.agent_hostname) clientByMac.set(mac, host);
+      }
       const dnsShortNames = new Set<string>();
       const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
@@ -237,8 +246,11 @@ export async function POST(request: Request) {
         const deviceStats = inventoryByDeviceType.get(deviceTypeKey) || { total: 0, ipMatches: 0 };
         deviceStats.total += 1;
 
+        const hostMac = normalizeMac(host?.mac || host?.agent_mac);
+        const macClient = hostMac ? clientByMac.get(hostMac) : undefined;
         const candidates = [
           host.hostname,
+          ...(macClient?.agent_hostname ? [macClient.agent_hostname] : []),
           ...(inventoryReverseNames.get(String(host.ip || "").trim()) || [])
         ]
           .map(normalizeHostname)
