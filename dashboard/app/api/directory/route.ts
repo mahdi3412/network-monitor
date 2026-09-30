@@ -471,9 +471,12 @@ export async function POST(request: Request) {
         else if (deviceType === "linux-or-network" || serviceText.includes("ssh")) classification = "linux-network";
         else if (deviceType === "unknown") classification = adOs ? "ad-nonwindows" : "unknown";
         const hasWindowsEvidence = adOs.includes("windows") || deviceType === "windows" || serviceText.includes("microsoft") || serviceText.includes("rdp");
+        const hasAdHostnameForDiagnostics = candidates
+          .map(shortHostname)
+          .some((value) => names.has(value) || dnsShortNames.has(value) || dnsNames.has(value));
         if (hasWindowsEvidence && !(ipMatch || hostnameMatch || dnsMatch)) {
           let reason = "outside-ad-or-unknown";
-          if (host.hostname && !hasAdHostname && (forwardIps.length === 0 || !forwardIps.includes(normalizedIp))) {
+          if (host.hostname && !hasAdHostnameForDiagnostics && (forwardIps.length === 0 || !forwardIps.includes(normalizedIp))) {
             reason = "hostname-not-in-ad";
           } else if (forwardIps.length && !forwardIps.includes(normalizedIp)) {
             reason = "dns-ip-mismatch";
