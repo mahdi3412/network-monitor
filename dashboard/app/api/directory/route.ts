@@ -218,46 +218,63 @@ export async function POST(request: Request) {
         } catch {}
       }));
 
-      // Forward-resolve only through the normal resolver first. Direct AD DNS
-      // lookups are deliberately avoided for every AD computer because a large
-      // number of missing DNS records can make the sync wait on resolver timeouts.
-      await Promise.all(directoryComputers.map(async (computer: any) => {
+      // Prefer the system resolver, but fall back to the AD DNS server when
+      // the system resolver cannot resolve an internal AD hostname. This keeps
+      // AD IP matching independent from the machine's DNS configuration.
+      const resolveAdComputerDns = async (computer: any) => {
         const dnsHostName = normalizeHostname(computer.dns_host_name);
         if (!dnsHostName) return;
+
         adDnsWithName += 1;
+        let addresses: string[] = [];
 
         try {
-          const addresses = await dns.resolve4(dnsHostName);
-          if (addresses.length) {
-            adDnsSystemResolved += 1;
-            for (const address of addresses) {
-              const ip = String(address || "").trim();
-              if (!ip) continue;
-              const existing = computersByIp.get(ip);
-              if (existing && normalizeHostname(existing.name) !== normalizeHostname(computer.name)) {
-                const set = adDnsIpConflicts.get(ip) || new Set<string>();
-                set.add(String(existing.name || existing.dns_host_name || ""));
-                set.add(String(computer.name || computer.dns_host_name || ""));
-                adDnsIpConflicts.set(ip, set);
-              }
-              computersByIp.set(ip, computer);
-              const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
-              if (computerKey) {
-                const ips = adComputerIpMap.get(computerKey) || new Set<string>();
-                ips.add(ip);
-                adComputerIpMap.set(computerKey, ips);
-              }
-            }
-            if (adDnsResolutionSamples.length < 10) {
-              adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
-            }
-            return;
-          }
+          addresses = (await dns.resolve4(dnsHostName)).map((value) => String(value || "").trim()).filter(Boolean);
+          if (addresses.length) adDnsSystemResolved += 1;
         } catch {}
 
-        adDnsUnresolved += 1;
-        if (adDnsResolutionSamples.length < 10) adDnsResolutionSamples.push(dnsHostName);
-      }));
+        if (!addresses.length && adDnsServerResolved) {
+          try {
+            addresses = (await adDnsResolver.resolve4(dnsHostName)).map((value) => String(value || "").trim()).filter(Boolean);
+            if (addresses.length) adDnsDirectResolved += 1;
+          } catch {}
+        }
+
+        if (!addresses.length) {
+          adDnsUnresolved += 1;
+          if (adDnsResolutionSamples.length < 10) adDnsResolutionSamples.push(dnsHostName);
+          return;
+        }
+
+        for (const address of addresses) {
+          const ip = String(address || "").trim();
+          if (!ip) continue;
+          const existing = computersByIp.get(ip);
+          if (existing && normalizeHostname(existing.name) !== normalizeHostname(computer.name)) {
+            const set = adDnsIpConflicts.get(ip) || new Set<string>();
+            set.add(String(existing.name || existing.dns_host_name || ""));
+            set.add(String(computer.name || computer.dns_host_name || ""));
+            adDnsIpConflicts.set(ip, set);
+          }
+          computersByIp.set(ip, computer);
+          const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
+          if (computerKey) {
+            const ips = adComputerIpMap.get(computerKey) || new Set<string>();
+            ips.add(ip);
+            adComputerIpMap.set(computerKey, ips);
+          }
+        }
+        if (adDnsResolutionSamples.length < 10) {
+          adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
+        }
+      };
+
+      // Keep the resolver load bounded so a large AD inventory does not create
+      // thousands of simultaneous DNS requests.
+      const dnsConcurrency = 32;
+      for (let i = 0; i < directoryComputers.length; i += dnsConcurrency) {
+        await Promise.all(directoryComputers.slice(i, i + dnsConcurrency).map(resolveAdComputerDns));
+      }
 
       for (const host of inventory) {
         const agentHostname = normalizeHostname(host?.agent_hostname);
