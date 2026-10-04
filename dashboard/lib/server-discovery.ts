@@ -344,7 +344,7 @@ async function enrichIdentities(hosts: Array<{
     const batch = hosts.slice(index, index + 16);
     const batchResults = await Promise.all(
       batch.map(async (host) => {
-        const netbios = await getNetbiosIdentity(host.ip);
+        const netbios = await getWindowsNetbiosIdentity(host.ip);
         const windowsReachable =
           host.services.includes("SMB") || host.services.includes("NETBIOS") ||
           host.services.includes("RPC") || host.services.includes("RDP") ||
