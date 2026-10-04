@@ -13,7 +13,11 @@ let scanning = false;
 
 const tcpPorts = [
   { port: 445, name: "SMB" },
+  { port: 139, name: "NETBIOS" },
+  { port: 135, name: "RPC" },
   { port: 3389, name: "RDP" },
+  { port: 5985, name: "WINRM" },
+  { port: 5986, name: "WINRMS" },
   { port: 80, name: "HTTP" },
   { port: 443, name: "HTTPS" },
   { port: 22, name: "SSH" },
@@ -98,7 +102,8 @@ async function tcpProbe(ip: string) {
     services,
     deviceType: services.includes("Printer")
       ? "printer"
-      : services.includes("SMB") || services.includes("RDP")
+      : services.includes("SMB") || services.includes("NETBIOS") || services.includes("RPC") ||
+        services.includes("RDP") || services.includes("WINRM") || services.includes("WINRMS")
         ? "windows"
         : services.includes("SSH")
           ? "linux-or-network"
@@ -212,6 +217,32 @@ async function getWindowsSessionUser(ip: string) {
   return "";
 }
 
+async function getWindowsWmiIdentity(ip: string) {
+  if (process.platform !== "win32") return { hostname: "", username: "" };
+
+  try {
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      "$c=Get-WmiObject -Class Win32_ComputerSystem -ComputerName '" + ip + "' -ErrorAction Stop",
+      "[pscustomobject]@{Name=$c.Name;UserName=$c.UserName}|ConvertTo-Json -Compress"
+    ].join(";");
+
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024 }
+    );
+
+    const parsed = JSON.parse(String(stdout || "").trim() || "{}");
+    return {
+      hostname: String(parsed.Name || "").trim(),
+      username: String(parsed.UserName || "").trim()
+    };
+  } catch {
+    return { hostname: "", username: "" };
+  }
+}
+
 async function getWindowsCimIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
@@ -283,26 +314,41 @@ async function enrichIdentities(hosts: Array<{
     const batchResults = await Promise.all(
       batch.map(async (host) => {
         const netbios = await getNetbiosIdentity(host.ip);
-        const shouldTryCim =
+        const windowsReachable =
+          host.services.includes("SMB") || host.services.includes("NETBIOS") ||
+          host.services.includes("RPC") || host.services.includes("RDP") ||
+          host.services.includes("WINRM") || host.services.includes("WINRMS");
+
+        const shouldTryWmi =
           process.platform === "win32" &&
           (!netbios.hostname || !netbios.username) &&
-          (host.services.includes("SMB") || host.services.includes("RDP"));
+          (host.services.includes("RPC") || host.services.includes("SMB") || host.services.includes("RDP"));
+        const wmi = shouldTryWmi ? await getWindowsWmiIdentity(host.ip) : { hostname: "", username: "" };
+
+        const shouldTryCim =
+          process.platform === "win32" &&
+          (!netbios.hostname || !netbios.username || !wmi.hostname || !wmi.username) &&
+          (host.services.includes("WINRM") || host.services.includes("WINRMS"));
         const cim = shouldTryCim ? await getWindowsCimIdentity(host.ip) : { hostname: "", username: "" };
-        const smbName = host.services.includes("SMB") && !netbios.hostname && !cim.hostname
+
+        const smbName = (host.services.includes("SMB") || host.services.includes("NETBIOS")) &&
+          !netbios.hostname && !wmi.hostname && !cim.hostname
           ? await getSmbComputerName(host.ip)
           : "";
-        const sessionUser = (host.services.includes("SMB") || host.services.includes("RDP")) &&
-          !netbios.username && !cim.username
+
+        const sessionUser = windowsReachable &&
+          !netbios.username && !wmi.username && !cim.username
           ? await getWindowsSessionUser(host.ip)
           : "";
+
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
-          hostname: host.hostname || netbios.hostname || cim.hostname || smbName,
-          username: netbios.username || cim.username || sessionUser,
+          hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName,
+          username: netbios.username || wmi.username || cim.username || sessionUser,
           mac: arp.get(host.ip) || "",
           services: host.services,
-          deviceType: host.deviceType === "unknown" && (netbios.username || cim.username) ? "windows" : host.deviceType,
+          deviceType: host.deviceType === "unknown" && (windowsReachable || wmi.hostname || cim.hostname) ? "windows" : host.deviceType,
           method: host.method
         };
       })
