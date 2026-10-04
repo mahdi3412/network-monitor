@@ -184,6 +184,14 @@ export async function GET() {
     if (!current.directory_title && row.directory_title) current.directory_title = row.directory_title;
     if (!current.directory_email && row.directory_email) current.directory_email = row.directory_email;
     if (!current.directory_upn && row.directory_upn) current.directory_upn = row.directory_upn;
+    if (!current.ad_dns_host_name && row.ad_dns_host_name) current.ad_dns_host_name = row.ad_dns_host_name;
+    if (!current.ad_operating_system && row.ad_operating_system) current.ad_operating_system = row.ad_operating_system;
+    if (!current.ad_operating_system_version && row.ad_operating_system_version) current.ad_operating_system_version = row.ad_operating_system_version;
+    if (!current.ad_computer_description && row.ad_computer_description) current.ad_computer_description = row.ad_computer_description;
+    if (!current.ad_managed_by && row.ad_managed_by) current.ad_managed_by = row.ad_managed_by;
+    if (!current.ad_computer_dn && row.ad_computer_dn) current.ad_computer_dn = row.ad_computer_dn;
+    if (!current.ad_matched && row.ad_matched) current.ad_matched = row.ad_matched;
+    if (!current.ad_match_type && row.ad_match_type) current.ad_match_type = row.ad_match_type;
     if (!current.ad_computer_name && row.ad_computer_name) current.ad_computer_name = row.ad_computer_name;
     if (!current.ad_dns_host_name && row.ad_dns_host_name) current.ad_dns_host_name = row.ad_dns_host_name;
     if (!current.ad_operating_system && row.ad_operating_system) current.ad_operating_system = row.ad_operating_system;
