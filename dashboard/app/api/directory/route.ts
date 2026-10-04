@@ -95,9 +95,10 @@ export async function POST(request: Request) {
           const cnMatch = distinguishedName.match(/^CN=([^,]+)/i);
           const name = rawName || (cnMatch ? cnMatch[1].trim() : "") || dnsHostName.split(".")[0].trim();
           if (!name) return null;
+          const ipv4Address = String(computer?.ipv4Address || "").trim();
           return {
-            sql: "INSERT INTO directory_computers(name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
-            params: [name, dnsHostName, String(computer?.operatingSystem || ""), String(computer?.operatingSystemVersion || ""), String(computer?.description || ""), String(computer?.managedBy || ""), String(computer?.distinguishedName || ""), syncTime]
+            sql: "INSERT INTO directory_computers(name,dns_host_name,ipv4_address,operating_system,operating_system_version,description,managed_by,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET dns_host_name=excluded.dns_host_name,ipv4_address=excluded.ipv4_address,operating_system=excluded.operating_system,operating_system_version=excluded.operating_system_version,description=excluded.description,managed_by=excluded.managed_by,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
+            params: [name, dnsHostName, ipv4Address, String(computer?.operatingSystem || ""), String(computer?.operatingSystemVersion || ""), String(computer?.description || ""), String(computer?.managedBy || ""), String(computer?.distinguishedName || ""), syncTime]
           };
         })
         .filter(Boolean) as Array<{ sql: string; params: any[] }>;
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
       }));
       const [inventory, directoryComputers] = await Promise.all([
         all<any>("SELECT nh.ip, nh.hostname, nh.mac, nh.subnet, nh.device_type, nh.services, nh.method, nh.last_seen, c.hostname AS agent_hostname, c.mac AS agent_mac FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
-        all<any>("SELECT name,dns_host_name FROM directory_computers")
+        all<any>("SELECT name,dns_host_name,ipv4_address FROM directory_computers")
       ]);
 
       const names = new Set<string>();
@@ -142,6 +143,11 @@ export async function POST(request: Request) {
         if (name) {
           names.add(name);
           computerByName.set(name, computer);
+        }
+        const ipv4Address = String(computer.ipv4_address || "").trim();
+        if (ipv4Address && !isReservedInventoryIp(ipv4Address)) {
+          computersByIp.set(ipv4Address, computer);
+          adComputerIpMap.set(ipv4Address, new Set([name || dnsHostName || ipv4Address]));
         }
         if (dnsHostName) {
           dnsNames.add(dnsHostName);
