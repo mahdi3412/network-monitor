@@ -193,6 +193,25 @@ async function getSmbComputerName(ip: string) {
   return "";
 }
 
+async function getWindowsSessionUser(ip: string) {
+  if (process.platform !== "win32") return "";
+
+  try {
+    const { stdout } = await execFileAsync(
+      "query",
+      ["user", "/server:" + ip],
+      { windowsHide: true, timeout: 3500, maxBuffer: 1024 * 1024 }
+    );
+
+    for (const line of String(stdout || "").split(/\r?\n/).slice(1)) {
+      const match = line.trim().match(/^(\S+)\s+/);
+      if (match?.[1] && !/^(USERNAME|>USERNAME)$/i.test(match[1])) return match[1].trim();
+    }
+  } catch {}
+
+  return "";
+}
+
 async function getWindowsCimIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
@@ -272,11 +291,15 @@ async function enrichIdentities(hosts: Array<{
         const smbName = host.services.includes("SMB") && !netbios.hostname && !cim.hostname
           ? await getSmbComputerName(host.ip)
           : "";
+        const sessionUser = (host.services.includes("SMB") || host.services.includes("RDP")) &&
+          !netbios.username && !cim.username
+          ? await getWindowsSessionUser(host.ip)
+          : "";
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
           hostname: host.hostname || netbios.hostname || cim.hostname || smbName,
-          username: netbios.username || cim.username,
+          username: netbios.username || cim.username || sessionUser,
           mac: arp.get(host.ip) || "",
           services: host.services,
           deviceType: host.deviceType === "unknown" && (netbios.username || cim.username) ? "windows" : host.deviceType,
