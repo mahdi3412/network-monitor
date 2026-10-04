@@ -245,7 +245,7 @@ async function enrichIdentities(hosts: Array<{
         const netbios = await getNetbiosIdentity(host.ip);
         const shouldTryCim =
           process.platform === "win32" &&
-          !netbios.hostname &&
+          (!netbios.hostname || !netbios.username) &&
           (host.services.includes("SMB") || host.services.includes("RDP"));
         const cim = shouldTryCim ? await getWindowsCimIdentity(host.ip) : { hostname: "", username: "" };
         return {
