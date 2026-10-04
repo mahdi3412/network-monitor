@@ -46,6 +46,16 @@ export async function GET() {
     if (personnel) directoryUserByPersonnel.set(personnel, user);
   }
 
+  const adDnsResolver = new dns.Resolver();
+  let adDnsServerResolved = false;
+  try {
+    const adServer = (await dns.resolve4(String(process.env.AD_URLS || "").split(/[;,\s]+/).map((v) => v.replace(/^ldaps?:\/\//i, "").replace(/:\d+$/, "")).find(Boolean) || ""))[0];
+    if (adServer) {
+      adDnsResolver.setServers([adServer]);
+      adDnsServerResolved = true;
+    }
+  } catch {}
+
   const computersByName = new Map<string, any>();
   const computersByDns = new Map<string, any>();
   const computersByIp = new Map<string, any>();
@@ -53,12 +63,16 @@ export async function GET() {
   await Promise.all(directoryComputers.map(async (computer) => {
     const dnsHostName = normalizeHostname(computer.dns_host_name);
     if (!dnsHostName) return;
+    let addresses: string[] = [];
     try {
-      const addresses = await dns.resolve4(dnsHostName);
-      for (const address of addresses) computersByIp.set(address, computer);
-    } catch {
-      // DNS resolution can fail for stale or unreachable AD records; hostname matching remains available.
+      addresses = await dns.resolve4(dnsHostName);
+    } catch {}
+    if (!addresses.length && adDnsServerResolved) {
+      try {
+        addresses = await adDnsResolver.resolve4(dnsHostName);
+      } catch {}
     }
+    for (const address of addresses) computersByIp.set(address, computer);
   }));
 
   for (const computer of directoryComputers) {
