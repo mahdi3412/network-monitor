@@ -220,6 +220,7 @@ throw "All configured Active Directory servers failed. Check the server-side err
     NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
     NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0",
     NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute,
+    NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute,
     NETWORK_MONITOR_AD_VALUE: value,
     NETWORK_MONITOR_AD_OPERATION: operation
   };
@@ -349,7 +350,7 @@ foreach ($serverUrl in $servers) {
         $username = First-AttributeValue $entry "sAMAccountName"
         if (-not $username) { continue }
         $users.Add([PSCustomObject]@{
-          personnelId = $(First-AttributeValue $entry "employeeID");
+          personnelId = $(if ((First-AttributeValue $entry "employeeID")) { First-AttributeValue $entry "employeeID" } elseif ((First-AttributeValue $entry "employeeNumber")) { First-AttributeValue $entry "employeeNumber" } else { First-AttributeValue $entry $attribute });
           employeeNumber = $(First-AttributeValue $entry "employeeNumber");
           username = $username;
           userPrincipalName = $(First-AttributeValue $entry "userPrincipalName");
