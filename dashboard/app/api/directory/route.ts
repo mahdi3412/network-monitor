@@ -608,10 +608,11 @@ export async function POST(request: Request) {
         .map((user: any) => {
           const username = String(user?.username || "").trim();
           if (!username) return null;
-          const personnelId = String(user?.personnelId || user?.employeeNumber || username).trim();
+          const personnelId = String(user?.personnelId || user?.employeeNumber || "").trim();
+          const storagePersonnelId = personnelId || "__ad_user__:" + username.toLowerCase();
           return {
             sql: "INSERT INTO directory_users(personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email,distinguished_name,last_sync) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(personnel_id) DO UPDATE SET username=excluded.username,user_principal_name=excluded.user_principal_name,display_name=excluded.display_name,first_name=excluded.first_name,last_name=excluded.last_name,department=excluded.department,title=excluded.title,email=excluded.email,distinguished_name=excluded.distinguished_name,last_sync=excluded.last_sync",
-            params: [personnelId, username, String(user?.userPrincipalName || ""), String(user?.displayName || ""), String(user?.firstName || ""), String(user?.lastName || ""), String(user?.department || ""), String(user?.title || ""), String(user?.email || ""), String(user?.distinguishedName || ""), syncTime]
+            params: [storagePersonnelId, username, String(user?.userPrincipalName || ""), String(user?.displayName || ""), String(user?.firstName || ""), String(user?.lastName || ""), String(user?.department || ""), String(user?.title || ""), String(user?.email || ""), String(user?.distinguishedName || ""), syncTime]
           };
         })
         .filter(Boolean) as Array<{ sql: string; params: any[] }>;
