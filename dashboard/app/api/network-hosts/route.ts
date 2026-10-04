@@ -10,7 +10,7 @@ export const revalidate = 0;
 export async function GET() {
   await initDb();
 
-  const [rows, directoryComputers] = await Promise.all([
+  const [rows, directoryComputers, clients, directoryUsers] = await Promise.all([
     all<any>(`
       SELECT nh.*, c.hostname AS agent_hostname, c.ip AS agent_ip,
         du.personnel_id AS directory_personnel_id, du.display_name AS directory_display_name,
@@ -22,8 +22,29 @@ export async function GET() {
       LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
       ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
     `),
-    all<any>("SELECT name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name FROM directory_computers")
+    all<any>("SELECT name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name FROM directory_computers"),
+    all<any>("SELECT agent_id,ip,mac,hostname,username,first_name,last_name,personnel_id,adapter FROM clients"),
+    all<any>("SELECT personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email FROM directory_users")
   ]);
+
+  const clientByIp = new Map<string, any>();
+  const clientByMac = new Map<string, any>();
+  const directoryUserByUsername = new Map<string, any>();
+  const directoryUserByPersonnel = new Map<string, any>();
+
+  for (const client of clients) {
+    const ip = String(client.ip || "").trim();
+    const mac = String(client.mac || "").trim().toLowerCase().replace(/[^0-9a-f]/g, "");
+    if (ip) clientByIp.set(ip, client);
+    if (mac) clientByMac.set(mac, client);
+  }
+
+  for (const user of directoryUsers) {
+    const username = String(user.username || "").trim().toLowerCase();
+    const personnel = String(user.personnel_id || "").trim().toLowerCase();
+    if (username) directoryUserByUsername.set(username, user);
+    if (personnel) directoryUserByPersonnel.set(personnel, user);
+  }
 
   const computersByName = new Map<string, any>();
   const computersByDns = new Map<string, any>();
@@ -48,7 +69,34 @@ export async function GET() {
   }
 
   for (const row of rows) {
-    const hostnameCandidates = [row.hostname]
+    const client = clientByIp.get(String(row.ip || "").trim()) || null;
+    const rowMac = String(row.mac || "").trim().toLowerCase().replace(/[^0-9a-f]/g, "");
+    const macClient = rowMac ? clientByMac.get(rowMac) : null;
+    const identityClient = client || macClient;
+    const effectiveUsername = String(row.username || identityClient?.username || "").trim();
+    const effectivePersonnel = String(identityClient?.personnel_id || "").trim();
+    const directoryUser =
+      (effectivePersonnel ? directoryUserByPersonnel.get(effectivePersonnel.toLowerCase()) : null) ||
+      (effectiveUsername ? directoryUserByUsername.get(effectiveUsername.toLowerCase()) : null);
+
+    if (!row.username && effectiveUsername) row.username = effectiveUsername;
+    if (!row.mac && identityClient?.mac) row.mac = identityClient.mac;
+    if (!row.adapter && identityClient?.adapter) row.adapter = identityClient.adapter;
+    if (!row.agent_hostname && identityClient?.hostname) row.agent_hostname = identityClient.hostname;
+    if (!row.agent_ip && identityClient?.ip) row.agent_ip = identityClient.ip;
+
+    if (directoryUser) {
+      row.directory_personnel_id = row.directory_personnel_id || directoryUser.personnel_id || effectivePersonnel || null;
+      row.directory_display_name = row.directory_display_name || directoryUser.display_name || [directoryUser.first_name, directoryUser.last_name].filter(Boolean).join(" ") || null;
+      row.directory_first_name = row.directory_first_name || directoryUser.first_name || null;
+      row.directory_last_name = row.directory_last_name || directoryUser.last_name || null;
+      row.directory_department = row.directory_department || directoryUser.department || null;
+      row.directory_title = row.directory_title || directoryUser.title || null;
+      row.directory_email = row.directory_email || directoryUser.email || null;
+      row.directory_upn = row.directory_upn || directoryUser.user_principal_name || null;
+    }
+
+    const hostnameCandidates = [row.hostname, identityClient?.hostname]
       .map(normalizeHostname)
       .filter(Boolean);
     let computer: any = computersByIp.get(row.ip) || null;
@@ -65,6 +113,8 @@ export async function GET() {
     }
 
     row.ad_computer_name = computer?.name || null;
+    if (!row.hostname && computer?.dns_host_name) row.hostname = shortHostname(computer.dns_host_name);
+    if (!row.hostname && computer?.name) row.hostname = computer.name;
     row.ad_dns_host_name = computer?.dns_host_name || null;
     row.ad_operating_system = computer?.operating_system || null;
     row.ad_operating_system_version = computer?.operating_system_version || null;
