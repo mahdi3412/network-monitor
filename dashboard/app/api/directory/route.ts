@@ -108,6 +108,7 @@ export async function POST(request: Request) {
       const rawComputerSamples = computers.slice(0, 5).map((computer: any) => ({
         name: String(computer?.name || ""),
         dnsHostName: String(computer?.dnsHostName || ""),
+        ipv4Address: String(computer?.ipv4Address || ""),
         distinguishedName: String(computer?.distinguishedName || "")
       }));
       const [inventory, directoryComputers] = await Promise.all([
