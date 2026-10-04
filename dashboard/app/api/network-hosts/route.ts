@@ -22,7 +22,7 @@ export async function GET() {
       LEFT JOIN directory_users du ON lower(trim(du.username)) = lower(trim(nh.username))
       ORDER BY nh.last_seen DESC, nh.subnet ASC, nh.ip ASC
     `),
-    all<any>("SELECT name,dns_host_name,operating_system,operating_system_version,description,managed_by,distinguished_name FROM directory_computers"),
+    all<any>("SELECT name,dns_host_name,ipv4_address,operating_system,operating_system_version,description,managed_by,distinguished_name FROM directory_computers"),
     all<any>("SELECT agent_id,ip,mac,hostname,username,first_name,last_name,personnel_id,adapter FROM clients"),
     all<any>("SELECT personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email FROM directory_users")
   ]);
@@ -86,6 +86,8 @@ export async function GET() {
   }));
 
   for (const computer of directoryComputers) {
+    const directIp = String(computer.ipv4_address || "").trim();
+    if (directIp && !computersByIp.has(directIp)) computersByIp.set(directIp, computer);
     const name = normalizeHostname(computer.name);
     const dns = normalizeHostname(computer.dns_host_name);
     if (name) computersByName.set(name, computer);
