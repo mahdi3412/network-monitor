@@ -43,7 +43,7 @@ export function getAdConfig() {
     .filter(Boolean)
     .map((item) => /^[a-z]+:\/\//i.test(item) ? item : `ldap://${item}`);
   const baseDn = String(process.env.AD_BASE_DN || "").trim();
-  const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "sAMAccountName").trim();
+  const personnelAttribute = String(process.env.AD_PERSONNEL_ATTRIBUTE || "employeeID").trim();
   const authMode = String(process.env.AD_AUTH_MODE || (process.env.AD_BIND_USER ? "credentials" : "integrated")).trim().toLowerCase();
   const username = String(process.env.AD_BIND_USER || "").trim();
   let server = "";
@@ -169,7 +169,7 @@ foreach ($serverUrl in $servers) {
         server = $server
         port = $port
         ssl = $useSsl
-        personnelId = First-AttributeValue $entry $attribute
+        personnelId = $(if ((First-AttributeValue $entry "employeeID")) { First-AttributeValue $entry "employeeID" } elseif ((First-AttributeValue $entry "employeeNumber")) { First-AttributeValue $entry "employeeNumber" } elseif ((First-AttributeValue $entry $attribute)) { First-AttributeValue $entry $attribute } else { First-AttributeValue $entry "sAMAccountName" })
         username = First-AttributeValue $entry "sAMAccountName"
         userPrincipalName = First-AttributeValue $entry "userPrincipalName"
         displayName = First-AttributeValue $entry "displayName"
