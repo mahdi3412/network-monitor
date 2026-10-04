@@ -172,6 +172,32 @@ async function getArpTable() {
   return result;
 }
 
+async function getWindowsCimIdentity(ip: string) {
+  if (process.platform !== "win32") return { hostname: "", username: "" };
+
+  try {
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      "$c=Get-CimInstance -ClassName Win32_ComputerSystem -ComputerName '" + ip + "' -OperationTimeoutSec 3",
+      "[pscustomobject]@{Name=$c.Name;UserName=$c.UserName}|ConvertTo-Json -Compress"
+    ].join(";");
+
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script],
+      { windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024 }
+    );
+
+    const parsed = JSON.parse(String(stdout || "").trim() || "{}");
+    return {
+      hostname: String(parsed.Name || "").trim(),
+      username: String(parsed.UserName || "").trim()
+    };
+  } catch {
+    return { hostname: "", username: "" };
+  }
+}
+
 async function getNetbiosIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
@@ -217,14 +243,19 @@ async function enrichIdentities(hosts: Array<{
     const batchResults = await Promise.all(
       batch.map(async (host) => {
         const netbios = await getNetbiosIdentity(host.ip);
+        const shouldTryCim =
+          process.platform === "win32" &&
+          !netbios.hostname &&
+          (host.services.includes("SMB") || host.services.includes("RDP"));
+        const cim = shouldTryCim ? await getWindowsCimIdentity(host.ip) : { hostname: "", username: "" };
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
-          hostname: host.hostname || netbios.hostname,
-          username: netbios.username,
+          hostname: host.hostname || netbios.hostname || cim.hostname,
+          username: netbios.username || cim.username,
           mac: arp.get(host.ip) || "",
           services: host.services,
-          deviceType: host.deviceType === "unknown" && netbios.username ? "windows" : host.deviceType,
+          deviceType: host.deviceType === "unknown" && (netbios.username || cim.username) ? "windows" : host.deviceType,
           method: host.method
         };
       })
