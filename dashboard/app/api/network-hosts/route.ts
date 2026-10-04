@@ -27,6 +27,15 @@ export async function GET() {
     all<any>("SELECT personnel_id,username,user_principal_name,display_name,first_name,last_name,department,title,email FROM directory_users")
   ]);
 
+  const normalizeDirectoryUsername = (value: unknown) => {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw) return "";
+    const slash = raw.lastIndexOf("\\");
+    if (slash >= 0) return raw.slice(slash + 1);
+    const at = raw.indexOf("@");
+    return at > 0 ? raw.slice(0, at) : raw;
+  };
+
   const clientByIp = new Map<string, any>();
   const clientByMac = new Map<string, any>();
   const directoryUserByUsername = new Map<string, any>();
@@ -40,7 +49,7 @@ export async function GET() {
   }
 
   for (const user of directoryUsers) {
-    const username = String(user.username || "").trim().toLowerCase();
+    const username = normalizeDirectoryUsername(user.username);
     const personnel = String(user.personnel_id || "").trim().toLowerCase();
     if (username) directoryUserByUsername.set(username, user);
     if (personnel) directoryUserByPersonnel.set(personnel, user);
@@ -96,7 +105,7 @@ export async function GET() {
     const effectivePersonnel = String(row.directory_personnel_id || identityClient?.personnel_id || "").trim();
     const directoryUser =
       (effectivePersonnel ? directoryUserByPersonnel.get(effectivePersonnel.toLowerCase()) : null) ||
-      (effectiveUsername ? directoryUserByUsername.get(effectiveUsername.toLowerCase()) : null);
+      (effectiveUsername ? directoryUserByUsername.get(normalizeDirectoryUsername(effectiveUsername)) : null);
 
     if (!row.username && effectiveUsername) row.username = effectiveUsername;
     if (!row.directory_personnel_id && effectivePersonnel && !effectivePersonnel.startsWith("__ad_user__:")) {
