@@ -643,7 +643,7 @@ export default function Home() {
                         )}
                       </td>
                       <td>{h.ip}</td>
-                      <td>{h.hostname || "-"}</td>
+                      <td>{h.hostname || h.ad_computer_name || h.ad_dns_host_name || "-"}</td>
                       <td>{h.username || "-"}</td>
                       <td>{h.directory_display_name || "-"}</td>
                       <td>{h.directory_personnel_id || "-"}</td>
