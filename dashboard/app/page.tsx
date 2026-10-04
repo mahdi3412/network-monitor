@@ -632,7 +632,7 @@ export default function Home() {
                       <td><span className={"status " + h.status}>{statusLabel(h.status)}</span></td>
                       <td>
                         {h.ad_matched ? (
-                          <span className="status online">متصل به AD · {h.ad_match_type === "dns" ? "DNS" : "نام"}</span>
+                          <span className="status online">متصل به AD · {h.ad_match_type === "dns" || h.ad_match_type === "dns-short" ? "DNS" : h.ad_match_type === "ip" ? "IP" : "نام"}</span>
                         ) : (
                           <span className="status offline">بدون تطبیق AD</span>
                         )}
