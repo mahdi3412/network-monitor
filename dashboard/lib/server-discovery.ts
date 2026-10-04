@@ -269,6 +269,37 @@ async function getWindowsCimIdentity(ip: string) {
   }
 }
 
+async function getWindowsNetbiosIdentity(ip: string) {
+  if (process.platform !== "win32") return { hostname: "", username: "" };
+
+  try {
+    const { stdout } = await execFileAsync("nbtstat", ["-A", ip], {
+      windowsHide: true,
+      timeout: 3000,
+      maxBuffer: 1024 * 1024
+    });
+
+    let hostname = "";
+    let username = "";
+
+    for (const line of String(stdout || "").split(/\r?\n/)) {
+      const match = line.trim().match(/^(\S+)\s+<([0-9a-f]{2})>\s+(UNIQUE|GROUP)\b/i);
+      if (!match) continue;
+
+      const name = match[1].trim();
+      const suffix = match[2].toLowerCase();
+      const kind = match[3].toUpperCase();
+
+      if (!hostname && suffix === "00" && kind === "UNIQUE") hostname = name;
+      if (!username && suffix === "03" && kind === "UNIQUE") username = name;
+    }
+
+    return { hostname, username };
+  } catch {
+    return { hostname: "", username: "" };
+  }
+}
+
 async function getNetbiosIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
