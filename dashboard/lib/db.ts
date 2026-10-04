@@ -140,6 +140,7 @@ export async function initDb(): Promise<void> {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT UNIQUE NOT NULL,
     dns_host_name TEXT,
+    ipv4_address TEXT,
     operating_system TEXT,
     operating_system_version TEXT,
     description TEXT,
@@ -171,6 +172,11 @@ export async function initDb(): Promise<void> {
   const heartbeats = await all<any>("PRAGMA table_info(heartbeats)");
   if (!heartbeats.some((column) => column.name === "latency_ms")) {
     await run("ALTER TABLE heartbeats ADD COLUMN latency_ms INTEGER");
+  }
+
+  const directoryComputers = await all<any>("PRAGMA table_info(directory_computers)");
+  if (!directoryComputers.some((column) => column.name === "ipv4_address")) {
+    await run("ALTER TABLE directory_computers ADD COLUMN ipv4_address TEXT");
   }
 
   const networkHosts = await all<any>("PRAGMA table_info(network_hosts)");
