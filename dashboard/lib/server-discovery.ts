@@ -172,6 +172,27 @@ async function getArpTable() {
   return result;
 }
 
+async function getSmbComputerName(ip: string) {
+  if (process.platform !== "win32") return "";
+
+  try {
+    const { stdout } = await execFileAsync(
+      "net",
+      ["view", "\\\\" + ip],
+      { windowsHide: true, timeout: 3500, maxBuffer: 1024 * 1024 }
+    );
+
+    const text = String(stdout || "");
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      const match = line.match(/^\\([^\\\s]+)\s+/);
+      if (match?.[1]) return match[1].trim();
+    }
+  } catch {}
+
+  return "";
+}
+
 async function getWindowsCimIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
@@ -248,10 +269,13 @@ async function enrichIdentities(hosts: Array<{
           (!netbios.hostname || !netbios.username) &&
           (host.services.includes("SMB") || host.services.includes("RDP"));
         const cim = shouldTryCim ? await getWindowsCimIdentity(host.ip) : { hostname: "", username: "" };
+        const smbName = host.services.includes("SMB") && !netbios.hostname && !cim.hostname
+          ? await getSmbComputerName(host.ip)
+          : "";
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
-          hostname: host.hostname || netbios.hostname || cim.hostname,
+          hostname: host.hostname || netbios.hostname || cim.hostname || smbName,
           username: netbios.username || cim.username,
           mac: arp.get(host.ip) || "",
           services: host.services,
