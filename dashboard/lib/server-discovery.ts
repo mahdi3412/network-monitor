@@ -190,7 +190,7 @@ async function getSmbComputerName(ip: string) {
     const text = String(stdout || "");
     const lines = text.split(/\r?\n/);
     for (const line of lines) {
-      const match = line.match(/^\\([^\\\s]+)\s+/);
+      const match = line.match(/^\\\\([^\\\s]+)\s+/);
       if (match?.[1]) return match[1].trim();
     }
   } catch {}
