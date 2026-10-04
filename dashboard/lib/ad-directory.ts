@@ -111,7 +111,7 @@ foreach ($serverUrl in $servers) {
     $uri = [Uri]$serverUrl
     $server = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
-    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
+    if ($uri.Scheme -eq "ldaps") { $useSsl = $true } elseif ($uri.Scheme -eq "ldap") { $useSsl = $false } else { $useSsl = $ssl }
 
     $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
@@ -314,7 +314,7 @@ foreach ($serverUrl in $servers) {
     $uri = [Uri]$serverUrl
     $server = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
-    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
+    if ($uri.Scheme -eq "ldaps") { $useSsl = $true } elseif ($uri.Scheme -eq "ldap") { $useSsl = $false } else { $useSsl = $ssl }
     $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
     if ($authMode -eq "integrated") {
@@ -456,7 +456,7 @@ foreach ($serverUrl in $servers) {
     $uri = [Uri]$serverUrl
     $server = $uri.Host
     $port = if ($uri.Port -gt 0) { $uri.Port } elseif ($uri.Scheme -eq "ldaps") { 636 } else { 389 }
-    $useSsl = $uri.Scheme -eq "ldaps" -or $ssl
+    if ($uri.Scheme -eq "ldaps") { $useSsl = $true } elseif ($uri.Scheme -eq "ldap") { $useSsl = $false } else { $useSsl = $ssl }
     $identifier = [System.DirectoryServices.Protocols.LdapDirectoryIdentifier]::new([string]$server,[int]$port,$true,$false)
 
     function Escape-LdapFilter([string]$Value) {
