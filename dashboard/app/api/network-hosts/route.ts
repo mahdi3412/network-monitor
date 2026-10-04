@@ -123,6 +123,7 @@ export async function GET() {
     if (!row.agent_ip && identityClient?.ip) row.agent_ip = identityClient.ip;
 
     if (directoryUser) {
+      if (!row.username && directoryUser.username) row.username = directoryUser.username;
       const directoryPersonnel = String(directoryUser.personnel_id || "").trim();
       row.directory_personnel_id = row.directory_personnel_id || (directoryPersonnel.startsWith("__ad_user__:") ? null : directoryPersonnel) || effectivePersonnel || null;
       row.directory_display_name = row.directory_display_name || directoryUser.display_name || [directoryUser.first_name, directoryUser.last_name].filter(Boolean).join(" ") || null;
