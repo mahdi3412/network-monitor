@@ -303,7 +303,9 @@ export default function Home() {
           windowsUnmatchedSamples: data.windowsUnmatchedSamples || [],
           agentAdDiagnostics: data.agentAdDiagnostics || [],
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
-          reservedInventoryHosts: data.reservedInventoryHosts || 0
+          reservedInventoryHosts: data.reservedInventoryHosts || 0,
+          adComputerIpv4Count: data.adComputerIpv4Count || 0,
+          adComputerIpv4Samples: data.adComputerIpv4Samples || []
         });
         setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · ذخیره: ${data.persistedComputers ?? 0} · رکورد DB: ${data.directoryComputerRows ?? 0} · Inventory: ${data.inventoryHosts ?? 0} · IP Match: ${data.ipMatches ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · DNS AD: ${data.adDnsWithName ?? 0} نام / ${data.adDnsSystemResolved ?? 0} سیستم / ${data.adDnsDirectResolved ?? 0} مستقیم از AD / ${data.adDnsUnresolved ?? 0} نامشخص · Subnet: ${(data.subnetDiagnostics || []).slice(0, 5).map((x: any) => `${x.subnet}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · Device: ${(data.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · نمونه بدون Match: ${(data.unmatchedSamples || []).slice(0, 5).join(", ") || "-"}`);
         await load();
@@ -512,6 +514,9 @@ export default function Home() {
                       </>
                     )}
                     <b>طبقه‌بندی نهایی Inventory</b>
+                        <b>پوشش IPv4 کامپیوترهای AD</b>
+                        <div dir="ltr">[AD-IP-COVERAGE] {adMatchDiagnostics.adComputerIpv4Count || 0} computer records with usable IPv4</div>
+                        {adMatchDiagnostics.adComputerIpv4Samples?.slice(0, 10).map((item: string) => <div key={item} dir="ltr">{item}</div>)}
                         {adMatchDiagnostics.inventoryClassificationDiagnostics?.map((item: any) => <div key={item.classification} dir="ltr">[CLASS] {item.classification} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
                         <b>ارتباط Device با OS در AD</b>
                         {adMatchDiagnostics.inventoryAdOsDiagnostics.map((item: any) => <div key={item.operatingSystem} dir="ltr">[AD-OS] {item.operatingSystem} | total={item.total} | match={item.matches} | unmatched={item.unmatched}</div>)}
