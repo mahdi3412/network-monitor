@@ -106,6 +106,22 @@ async function tcpProbe(ip: string) {
   };
 }
 
+async function windowsPingHostname(ip: string) {
+  if (process.platform !== "win32") return "";
+  try {
+    const { stdout } = await execFileAsync(
+      "ping",
+      ["-a", "-n", "1", "-w", "700", ip],
+      { windowsHide: true, timeout: 1400 }
+    );
+    const match = String(stdout || "").match(/Pinging\s+([^\s\[]+)\s+\[/i);
+    const hostname = String(match?.[1] || "").trim();
+    return hostname && hostname !== ip ? hostname : "";
+  } catch {
+    return "";
+  }
+}
+
 async function reverseDns(ip: string) {
   try {
     const { stdout } = await execFileAsync(
@@ -341,10 +357,11 @@ export async function scanServerNetworks() {
         if (!candidates.length) continue;
 
         const withDns = await Promise.all(
-          candidates.map(async (result) => ({
-            ...result,
-            hostname: await reverseDns(result.ip)
-          }))
+          candidates.map(async (result) => {
+            let hostname = await reverseDns(result.ip);
+            if (!hostname) hostname = await windowsPingHostname(result.ip);
+            return { ...result, hostname };
+          })
         );
 
         const enriched = await enrichIdentities(withDns, arp);
