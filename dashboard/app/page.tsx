@@ -58,7 +58,7 @@ type NetworkHost = {
   ad_managed_by?: string;
   ad_computer_dn?: string;
   ad_matched?: number;
-  ad_match_type?: "hostname" | "dns" | null;
+  ad_match_type?: "hostname" | "dns" | "dns-short" | null;
   status: "online" | "recent" | "offline";
 };
 
