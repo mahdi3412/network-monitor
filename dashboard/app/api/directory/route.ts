@@ -537,6 +537,18 @@ export async function POST(request: Request) {
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
 
+      const adComputerIpv4Count = directoryComputers.filter((computer) => {
+        const ip = String(computer.ipv4_address || "").trim();
+        return Boolean(ip) && !isReservedInventoryIp(ip);
+      }).length;
+      const adComputerIpv4Samples = directoryComputers
+        .filter((computer) => {
+          const ip = String(computer.ipv4_address || "").trim();
+          return Boolean(ip) && !isReservedInventoryIp(ip);
+        })
+        .slice(0, 20)
+        .map((computer) => `${computer.name || computer.dns_host_name || "-"} -> ${String(computer.ipv4_address || "").trim()}`);
+
       const adComputerMultiIpDiagnostics = Array.from(adComputerIpMap.entries())
         .filter(([, ips]) => ips.size > 1)
         .sort((a, b) => b[1].size - a[1].size)
@@ -582,6 +594,8 @@ export async function POST(request: Request) {
           .sort((a, b) => b.total - a.total),
         adDnsServer,
         adDnsServerResolved,
+        adComputerIpv4Count,
+        adComputerIpv4Samples,
         adDnsWithName,
         adDnsSystemResolved,
         adDnsDirectResolved,
