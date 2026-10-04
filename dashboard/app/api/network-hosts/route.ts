@@ -58,6 +58,7 @@ export async function GET() {
 
   const computersByName = new Map<string, any>();
   const computersByDns = new Map<string, any>();
+  const computersByDnsShort = new Map<string, any>();
   const computersByIp = new Map<string, any>();
 
   await Promise.all(directoryComputers.map(async (computer) => {
@@ -79,7 +80,11 @@ export async function GET() {
     const name = normalizeHostname(computer.name);
     const dns = normalizeHostname(computer.dns_host_name);
     if (name) computersByName.set(name, computer);
-    if (dns) computersByDns.set(dns, computer);
+    if (dns) {
+      computersByDns.set(dns, computer);
+      const dnsShort = shortHostname(dns);
+      if (dnsShort) computersByDnsShort.set(dnsShort, computer);
+    }
   }
 
   for (const row of rows) {
@@ -119,9 +124,9 @@ export async function GET() {
     for (const candidate of hostnameCandidates) {
       if (computer) break;
       const shortName = shortHostname(candidate);
-      computer = computersByName.get(shortName) || computersByDns.get(candidate);
+      computer = computersByName.get(shortName) || computersByDnsShort.get(shortName) || computersByDns.get(candidate);
       if (computer) {
-        matchType = computersByName.has(shortName) ? "hostname" : "dns";
+        matchType = computersByName.has(shortName) ? "hostname" : computersByDnsShort.has(shortName) ? "dns-short" : "dns";
         break;
       }
     }
