@@ -93,12 +93,15 @@ export async function GET() {
     const macClient = rowMac ? clientByMac.get(rowMac) : null;
     const identityClient = client || macClient;
     const effectiveUsername = String(row.username || identityClient?.username || "").trim();
-    const effectivePersonnel = String(identityClient?.personnel_id || "").trim();
+    const effectivePersonnel = String(row.directory_personnel_id || identityClient?.personnel_id || "").trim();
     const directoryUser =
       (effectivePersonnel ? directoryUserByPersonnel.get(effectivePersonnel.toLowerCase()) : null) ||
       (effectiveUsername ? directoryUserByUsername.get(effectiveUsername.toLowerCase()) : null);
 
     if (!row.username && effectiveUsername) row.username = effectiveUsername;
+    if (!row.directory_personnel_id && effectivePersonnel && !effectivePersonnel.startsWith("__ad_user__:")) {
+      row.directory_personnel_id = effectivePersonnel;
+    }
     if (!row.mac && identityClient?.mac) row.mac = identityClient.mac;
     if (!row.adapter && identityClient?.adapter) row.adapter = identityClient.adapter;
     if (!row.agent_hostname && identityClient?.hostname) row.agent_hostname = identityClient.hostname;
