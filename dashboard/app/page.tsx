@@ -549,10 +549,10 @@ export default function Home() {
             <div className="inventory-help">
               <b>راهنمای ستون‌ها:</b>
               <span><strong>Latency</strong> زمان تقریبی رفت‌وبرگشت پاسخ شبکه از سرور تا IP است؛ عدد کمتر معمولاً یعنی مسیر سریع‌تر.</span>
-              <span><strong>Computer Name</strong> نام سیستم است که از DNS یا NetBIOS گرفته می‌شود.</span>
-              <span><strong>Username</strong> نام کاربر ثبت‌شده در NetBIOS است و فقط برای سیستم‌هایی که این اطلاعات را ارائه کنند نمایش داده می‌شود.</span>
+              <span><strong>Computer Name</strong> نام سیستم است؛ اول از Inventory، سپس از Agent و در صورت تطبیق از نام/DNS کامپیوتر AD تکمیل می‌شود.</span>
+              <span><strong>Username</strong> ابتدا از Inventory و در صورت خالی بودن برای Agentها از اطلاعات خود Agent تکمیل می‌شود.</span>
               <span><strong>AD Match</strong> نشان می‌دهد این IP با رکورد کامپیوتر در AD تطبیق داده شده؛ «نام» بر اساس نام کامپیوتر و «DNS» بر اساس FQDN است.</span>
-              <span><strong>اطلاعات AD</strong> بعد از همگام‌سازی، Username به حساب AD متصل می‌شود و نام، شماره پرسنلی، واحد و سمت در داده Inventory قابل جستجو خواهد بود.</span>
+              <span><strong>اطلاعات AD</strong> بعد از همگام‌سازی کاربران AD، Username یا شماره پرسنلی به حساب AD وصل می‌شود و نام کاربر، پرسنلی، واحد، سمت و ایمیل قابل نمایش و جستجو است.</span>
               <span><strong>MAC</strong> شناسه سخت‌افزاری کارت شبکه است؛ برای رنج‌های پشت روتر معمولاً از خود سرور قابل مشاهده نیست.</span>
               <span><strong>Method</strong> مشخص می‌کند IP با ICMP، ARP یا TCP پیدا شده است.</span>
             </div>
@@ -622,7 +622,7 @@ export default function Home() {
               <table className="table">
                 <thead>
                   <tr>
-                    <th>وضعیت</th><th>AD Match</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام AD</th><th>پرسنلی</th><th>واحد</th><th>AD OS</th><th>AD DNS</th><th>MAC</th><th>Subnet</th>
+                    <th>وضعیت</th><th>AD Match</th><th>IP</th><th>Computer Name</th><th>Username</th><th>نام کاربر AD</th><th>پرسنلی</th><th>واحد</th><th>AD OS</th><th>AD DNS</th><th>MAC</th><th>Subnet</th>
                     <th>نوع</th><th>Services</th><th>روش</th><th>Latency</th><th>Agent</th><th>اولین مشاهده</th><th>آخرین مشاهده</th>
                   </tr>
                 </thead>
