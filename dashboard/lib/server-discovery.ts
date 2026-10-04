@@ -323,23 +323,25 @@ async function enrichIdentities(hosts: Array<{
           process.platform === "win32" &&
           (!netbios.hostname || !netbios.username) &&
           (host.services.includes("RPC") || host.services.includes("SMB") || host.services.includes("RDP"));
-        const wmi = shouldTryWmi ? await getWindowsWmiIdentity(host.ip) : { hostname: "", username: "" };
-
         const shouldTryCim =
           process.platform === "win32" &&
-          (!netbios.hostname || !netbios.username || !wmi.hostname || !wmi.username) &&
+          (!netbios.hostname || !netbios.username) &&
           (host.services.includes("WINRM") || host.services.includes("WINRMS"));
-        const cim = shouldTryCim ? await getWindowsCimIdentity(host.ip) : { hostname: "", username: "" };
+        const shouldTrySmbName =
+          process.platform === "win32" &&
+          (host.services.includes("SMB") || host.services.includes("NETBIOS")) &&
+          !netbios.hostname;
+        const shouldTrySessionUser =
+          process.platform === "win32" &&
+          windowsReachable &&
+          !netbios.username;
 
-        const smbName = (host.services.includes("SMB") || host.services.includes("NETBIOS")) &&
-          !netbios.hostname && !wmi.hostname && !cim.hostname
-          ? await getSmbComputerName(host.ip)
-          : "";
-
-        const sessionUser = windowsReachable &&
-          !netbios.username && !wmi.username && !cim.username
-          ? await getWindowsSessionUser(host.ip)
-          : "";
+        const [wmi, cim, smbName, sessionUser] = await Promise.all([
+          shouldTryWmi ? getWindowsWmiIdentity(host.ip) : Promise.resolve({ hostname: "", username: "" }),
+          shouldTryCim ? getWindowsCimIdentity(host.ip) : Promise.resolve({ hostname: "", username: "" }),
+          shouldTrySmbName ? getSmbComputerName(host.ip) : Promise.resolve(""),
+          shouldTrySessionUser ? getWindowsSessionUser(host.ip) : Promise.resolve("")
+        ]);
 
         return {
           ip: host.ip,
