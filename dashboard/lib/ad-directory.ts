@@ -144,7 +144,7 @@ foreach ($serverUrl in $servers) {
     } elseif ($operation -eq "computer") {
       $escaped = Escape-Ldap $value
       $filter = "(&(objectCategory=computer)(|(name=$escaped)(dNSHostName=$escaped)))"
-      $properties = @("name","dNSHostName","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
+      $properties = @("name","dNSHostName","ipv4Address","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
     } else {
       throw "Unsupported AD operation."
     }
@@ -486,6 +486,7 @@ foreach ($serverUrl in $servers) {
         $Target.Add([PSCustomObject]@{
           name = $name;
           dnsHostName = $dns;
+          ipv4Address = First-AttributeValue $entry "ipv4Address";
           operatingSystem = First-AttributeValue $entry "operatingSystem";
           operatingSystemVersion = First-AttributeValue $entry "operatingSystemVersion";
           description = First-AttributeValue $entry "description";
