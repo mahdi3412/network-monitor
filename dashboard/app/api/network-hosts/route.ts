@@ -39,6 +39,7 @@ export async function GET() {
   const clientByIp = new Map<string, any>();
   const clientByMac = new Map<string, any>();
   const directoryUserByUsername = new Map<string, any>();
+  const directoryUserByUpn = new Map<string, any>();
   const directoryUserByPersonnel = new Map<string, any>();
 
   for (const client of clients) {
@@ -52,6 +53,8 @@ export async function GET() {
     const username = normalizeDirectoryUsername(user.username);
     const personnel = String(user.personnel_id || "").trim().toLowerCase();
     if (username) directoryUserByUsername.set(username, user);
+    const upn = String(user.user_principal_name || "").trim().toLowerCase();
+    if (upn) directoryUserByUpn.set(upn, user);
     if (personnel) directoryUserByPersonnel.set(personnel, user);
   }
 
@@ -107,7 +110,8 @@ export async function GET() {
     const effectivePersonnel = String(row.directory_personnel_id || identityClient?.personnel_id || "").trim();
     const directoryUser =
       (effectivePersonnel ? directoryUserByPersonnel.get(effectivePersonnel.toLowerCase()) : null) ||
-      (effectiveUsername ? directoryUserByUsername.get(normalizeDirectoryUsername(effectiveUsername)) : null);
+      (effectiveUsername ? directoryUserByUsername.get(normalizeDirectoryUsername(effectiveUsername)) : null) ||
+      (effectiveUsername && effectiveUsername.includes("@") ? directoryUserByUpn.get(effectiveUsername.toLowerCase()) : null);
 
     if (!row.username && effectiveUsername) row.username = effectiveUsername;
     if (!row.directory_personnel_id && effectivePersonnel && !effectivePersonnel.startsWith("__ad_user__:")) {
