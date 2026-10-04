@@ -616,7 +616,16 @@ export async function POST(request: Request) {
         })
         .filter(Boolean) as Array<{ sql: string; params: any[] }>;
 
-      if (statements.length) await transaction(statements);
+      if (statements.length) {
+        const cleanup = users
+          .map((user: any) => String(user?.username || "").trim().toLowerCase())
+          .filter(Boolean)
+          .map((username) => ({
+            sql: "DELETE FROM directory_users WHERE lower(trim(username))=? AND personnel_id NOT IN (SELECT personnel_id FROM directory_users WHERE lower(trim(username))=? ORDER BY last_sync DESC LIMIT 1)",
+            params: [username, username]
+          }));
+        await transaction([...statements, ...cleanup]);
+      }
 
       return json({ ok: true, synced: statements.length, total: users.length });
     }
