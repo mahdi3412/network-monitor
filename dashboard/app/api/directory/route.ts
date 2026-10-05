@@ -349,6 +349,15 @@ export async function POST(request: Request) {
       const unmatchedReasonCounts = { noHostname: 0, hostnameNotInAd: 0, dnsUnresolved: 0, ipNotResolvedInAdDns: 0, nonWindowsOrUnknown: 0 };
       const unmatchedReasonSamples = { noHostname: [] as string[], hostnameNotInAd: [] as string[], dnsUnresolved: [] as string[], ipNotResolvedInAdDns: [] as string[], nonWindowsOrUnknown: [] as string[] };
       const matchedSamples: string[] = [];
+      const macDiagnostics = {
+        hostsWithMac: 0,
+        macClientMatches: 0,
+        macClientWithHostname: 0,
+        macHostnameInAd: 0,
+        macHostnameNotInAd: 0
+      };
+      const macDiagnosticSamples: string[] = [];
+      const noHostnameDiagnostics: string[] = [];
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
       const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
@@ -370,7 +379,30 @@ export async function POST(request: Request) {
         deviceStats.total += 1;
 
         const hostMac = normalizeMac(host?.mac || host?.agent_mac);
+        if (hostMac) macDiagnostics.hostsWithMac += 1;
         const macClient = hostMac ? clientByMac.get(hostMac) : undefined;
+        if (macClient) {
+          macDiagnostics.macClientMatches += 1;
+          if (macClient?.hostname) {
+            macDiagnostics.macClientWithHostname += 1;
+            const macAdName = normalizeHostname(macClient.hostname);
+            const macAdKnown = Boolean(
+              macAdName &&
+              (
+                names.has(shortHostname(macAdName)) ||
+                dnsShortNames.has(shortHostname(macAdName)) ||
+                dnsNames.has(macAdName)
+              )
+            );
+            if (macAdKnown) macDiagnostics.macHostnameInAd += 1;
+            else macDiagnostics.macHostnameNotInAd += 1;
+            if (macDiagnosticSamples.length < 20) {
+              macDiagnosticSamples.push(
+                `IP=${normalizedIp} | MAC=${hostMac} | client=${String(macClient.hostname || "-")} | AD=${macAdKnown ? "yes" : "no"}`
+              );
+            }
+          }
+        }
         const ipClient = clientByIp.get(normalizedIp);
         if (macClient && ipClient && macClient.agent_hostname !== ipClient.agent_hostname) {
           identityConflicts.macVsIp += 1;
@@ -467,6 +499,11 @@ export async function POST(request: Request) {
 
           if (!hasHostname) {
             unmatchedReason = "noHostname";
+            if (noHostnameDiagnostics.length < 50) {
+              noHostnameDiagnostics.push(
+                `IP=${normalizedIp} | MAC=${hostMac || "-"} | client=${String(macClient?.hostname || "-")} | ipClient=${String(ipClient?.hostname || "-")} | reverse=${reverseNames.join(",") || "-"} | method=${String(host.method || "-")}`
+              );
+            }
           } else if (!hasAdHostname && !macConfirmedAdHostname) {
             unmatchedReason = "hostnameNotInAd";
           } else if (adDnsServerResolved && !ipResolvedInAdDns && !reverseResolved) {
@@ -635,6 +672,9 @@ export async function POST(request: Request) {
         inventoryDnsDiagnostics,
         identityConflicts,
         identityConflictSamples,
+        macDiagnostics,
+        macDiagnosticSamples,
+        noHostnameDiagnostics,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
