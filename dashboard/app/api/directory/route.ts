@@ -166,8 +166,12 @@ export async function POST(request: Request) {
       let adDnsServerResolved = false;
       try {
         const config = getAdConfig();
-        const serverAddresses = config.server ? await dns.resolve4(config.server) : [];
-        adDnsServer = serverAddresses[0] || "";
+        if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(config.server || "")) {
+          adDnsServer = config.server;
+        } else {
+          const serverAddresses = config.server ? await dns.resolve4(config.server) : [];
+          adDnsServer = serverAddresses[0] || "";
+        }
         if (adDnsServer) {
           adDnsResolver.setServers([adDnsServer]);
           adDnsServerResolved = true;
@@ -187,21 +191,27 @@ export async function POST(request: Request) {
       const inventoryReverseNames = new Map<string, string[]>();
       const inventoryForwardIps = new Map<string, string[]>();
       const inventoryDnsDiagnostics: Array<{ ip: string; hostname: string; resolvedIps: string[]; adIps: string[] }> = [];
-      if (adDnsServerResolved) {
-        await Promise.all(inventory.map(async (host: any) => {
-          const ip = String(host?.ip || "").trim();
-          if (!ip || isReservedInventoryIp(ip)) return;
+      await Promise.all(inventory.map(async (host: any) => {
+        const ip = String(host?.ip || "").trim();
+        if (!ip || isReservedInventoryIp(ip)) return;
+        let names: string[] = [];
+        if (adDnsServerResolved) {
           try {
-            const names = await adDnsResolver.reverse(ip);
-            if (names.length) {
-              inventoryReverseNames.set(
-                ip,
-                names.map(normalizeHostname).filter(Boolean)
-              );
-            }
+            names = await adDnsResolver.reverse(ip);
           } catch {}
-        }));
-      }
+        }
+        if (!names.length) {
+          try {
+            names = await dns.reverse(ip);
+          } catch {}
+        }
+        if (names.length) {
+          inventoryReverseNames.set(
+            ip,
+            names.map(normalizeHostname).filter(Boolean)
+          );
+        }
+      }));
 
       // Forward-resolve inventory hostnames with the system resolver to detect
       // hostname->IP mismatches independently from AD DNS matching.
