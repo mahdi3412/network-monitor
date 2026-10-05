@@ -419,8 +419,15 @@ export async function POST(request: Request) {
           if (diagnostic) diagnostic.adIps = forwardIps;
         }
 
+        // The agent inventory can identify a host by IP even when the
+        // network scanner itself could not discover a hostname. Include the
+        // client hostname as an identity candidate just like the MAC-linked
+        // hostname; this is especially important for server-side scans where
+        // network_hosts.agent_id is __server__.
         const candidates = [
           host.hostname,
+          ...(ipClient?.hostname ? [ipClient.hostname] : []),
+          ...(macClient?.hostname ? [macClient.hostname] : []),
           ...(macClient?.agent_hostname ? [macClient.agent_hostname] : []),
           ...(inventoryReverseNames.get(String(host.ip || "").trim()) || [])
         ]
@@ -439,7 +446,12 @@ export async function POST(request: Request) {
         const ipMatch = Boolean(ipComputer);
         let hostnameMatch = false;
         let dnsMatch = false;
-        const macHostnameCandidate = macClient?.agent_hostname ? normalizeHostname(macClient.agent_hostname) : "";
+        const macHostnameCandidate = macClient?.hostname
+          ? normalizeHostname(macClient.hostname)
+          : macClient?.agent_hostname
+            ? normalizeHostname(macClient.agent_hostname)
+            : "";
+        const ipHostnameCandidate = ipClient?.hostname ? normalizeHostname(ipClient.hostname) : "";
         let macHostnameMatch = false;
         let matchedCandidate = ipMatch ? `${host.ip} -> ${ipComputer?.name || ipComputer?.dns_host_name || ""}` : "";
 
@@ -447,7 +459,11 @@ export async function POST(request: Request) {
           const shortCandidate = shortHostname(candidate);
           if (names.has(shortCandidate) || dnsShortNames.has(shortCandidate)) {
             hostnameMatch = true;
-            macHostnameMatch = Boolean(macHostnameCandidate && shortCandidate === shortHostname(macHostnameCandidate));
+            macHostnameMatch = Boolean(
+              macHostnameCandidate &&
+              shortCandidate === shortHostname(macHostnameCandidate) &&
+              (shortCandidate === shortHostname(macHostnameCandidate))
+            );
             matchedCandidate = candidate;
             break;
           }
