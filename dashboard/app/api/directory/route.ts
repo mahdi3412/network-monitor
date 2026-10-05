@@ -358,6 +358,7 @@ export async function POST(request: Request) {
       };
       const macDiagnosticSamples: string[] = [];
       const noHostnameDiagnostics: string[] = [];
+      const noHostnameWithUsername = { total: 0, samples: [] as string[] };
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
       const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
@@ -520,8 +521,16 @@ export async function POST(request: Request) {
             unmatchedReason = "noHostname";
             if (noHostnameDiagnostics.length < 50) {
               noHostnameDiagnostics.push(
-                `IP=${normalizedIp} | MAC=${hostMac || "-"} | client=${String(macClient?.hostname || "-")} | ipClient=${String(ipClient?.hostname || "-")} | reverse=${reverseNames.join(",") || "-"} | method=${String(host.method || "-")}`
+                `IP=${normalizedIp} | MAC=${hostMac || "-"} | username=${String(host?.username || "-")} | MAC-client=${String(macClient?.hostname || "-")} | IP-client=${String(ipClient?.hostname || "-")} | reverse=${reverseNames.join(",") || "-"} | method=${String(host.method || "-")}`
               );
+              if (String(host?.username || "").trim()) {
+                noHostnameWithUsername.total += 1;
+                if (noHostnameWithUsername.samples.length < 20) {
+                  noHostnameWithUsername.samples.push(
+                    `IP=${normalizedIp} | username=${String(host.username).trim()} | services=${String(host.services || "-")} | diagnostics=${String(host.identity_diagnostics || "-")}`
+                  );
+                }
+              }
             }
           } else if (!hasAdHostname && !macConfirmedAdHostname) {
             unmatchedReason = "hostnameNotInAd";
@@ -694,6 +703,7 @@ export async function POST(request: Request) {
         macDiagnostics,
         macDiagnosticSamples,
         noHostnameDiagnostics,
+        noHostnameWithUsername,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
