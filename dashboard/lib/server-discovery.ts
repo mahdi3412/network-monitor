@@ -307,6 +307,7 @@ async function enrichIdentities(hosts: Array<{
   services: string[];
   deviceType: string;
   method: string;
+  identityDiagnostics?: Record<string, string>;
 }>, arp: Map<string, string>) {
   const enriched = [];
 
@@ -344,6 +345,16 @@ async function enrichIdentities(hosts: Array<{
           shouldTrySessionUser ? getWindowsSessionUser(host.ip) : Promise.resolve("")
         ]);
 
+        const identityDiagnostics = {
+          ...(host.identityDiagnostics || {}),
+          netbios: netbios.hostname || netbios.username ? "success" : "none",
+          wmi: shouldTryWmi ? (wmi.hostname || wmi.username ? "success" : "none") : "skipped",
+          cim: shouldTryCim ? (cim.hostname || cim.username ? "success" : "none") : "skipped",
+          smb: shouldTrySmbName ? (smbName ? "success" : "none") : "skipped",
+          queryUser: shouldTrySessionUser ? (sessionUser ? "success" : "none") : "skipped",
+          arp: arp.has(host.ip) ? "success" : "none"
+        };
+
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
@@ -352,7 +363,8 @@ async function enrichIdentities(hosts: Array<{
           mac: arp.get(host.ip) || "",
           services: host.services,
           deviceType: host.deviceType === "unknown" && (windowsReachable || wmi.hostname || cim.hostname) ? "windows" : host.deviceType,
-          method: host.method
+          method: host.method,
+          identityDiagnostics: JSON.stringify(identityDiagnostics)
         };
       })
     );
@@ -454,6 +466,7 @@ export async function scanServerNetworks() {
           services: string[];
           deviceType: string;
           method: string;
+          identityDiagnostics?: Record<string, string>;
         }> = pingResults
           .filter((result) => result.latencyMs != null)
           .map((result) => ({
@@ -485,9 +498,17 @@ export async function scanServerNetworks() {
 
         const withDns = await Promise.all(
           candidates.map(async (result) => {
-            let hostname = await reverseDns(result.ip);
-            if (!hostname) hostname = await windowsPingHostname(result.ip);
-            return { ...result, hostname };
+            const reverse = await reverseDns(result.ip);
+            const pingA = reverse ? "skipped" : (await windowsPingHostname(result.ip)) ? "success" : "none";
+            const hostname = reverse || (pingA === "success" ? await windowsPingHostname(result.ip) : "");
+            return {
+              ...result,
+              hostname,
+              identityDiagnostics: {
+                reverseDns: reverse ? "success" : "none",
+                pingA
+              }
+            };
           })
         );
 
@@ -495,7 +516,7 @@ export async function scanServerNetworks() {
 
         for (const result of enriched) {
           await run(
-            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method=excluded.method,device_type=CASE WHEN excluded.device_type<>'unknown' THEN excluded.device_type ELSE network_hosts.device_type END,services=CASE WHEN excluded.services<>'[]' THEN excluded.services ELSE network_hosts.services END,latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
+            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,identity_diagnostics,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method=excluded.method,identity_diagnostics=CASE WHEN excluded.identity_diagnostics<>'' THEN excluded.identity_diagnostics ELSE network_hosts.identity_diagnostics END,device_type=CASE WHEN excluded.device_type<>'unknown' THEN excluded.device_type ELSE network_hosts.device_type END,services=CASE WHEN excluded.services<>'[]' THEN excluded.services ELSE network_hosts.services END,latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
             [
               "__server__",
               result.ip,
@@ -505,6 +526,7 @@ export async function scanServerNetworks() {
               "server",
               subnet,
               result.method,
+              result.identityDiagnostics,
               result.deviceType,
               JSON.stringify(result.services),
               result.latencyMs,
