@@ -280,6 +280,7 @@ async function getNetbiosIdentity(ip: string) {
     });
 
     let hostname = "";
+    let netbiosServerName = "";
     let username = "";
     let mac = "";
 
@@ -294,10 +295,17 @@ async function getNetbiosIdentity(ip: string) {
       const kind = match[3].toUpperCase();
 
       if (!hostname && suffix === "00" && kind === "UNIQUE") hostname = name;
+      // Some Windows hosts do not expose the workstation <00> record through
+      // remote NBT, while the server-service <20> record is still available.
+      // Use that as a hostname fallback; <20> UNIQUE is the computer name,
+      // whereas GROUP records can be a domain/workgroup name.
+      if (!netbiosServerName && suffix === "20" && kind === "UNIQUE") {
+        netbiosServerName = name;
+      }
       if (!username && suffix === "03" && kind === "UNIQUE") username = name;
     }
 
-    return { hostname, username, mac };
+    return { hostname: hostname || netbiosServerName, username, mac };
   } catch {
     return { hostname: "", username: "", mac: "" };
   }
