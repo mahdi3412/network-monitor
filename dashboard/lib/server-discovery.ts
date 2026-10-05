@@ -481,20 +481,33 @@ export async function scanServerNetworks() {
             method: "icmp"
           }));
 
-        const pingDown = batch.filter((ip) => !pingResults.some((result) => result.ip === ip && result.latencyMs != null));
+        // ICMP-reachable hosts used to skip TCP probing entirely. That left
+        // Windows hosts with an empty service list, so SMB/RPC/WMI/NetBIOS
+        // identity enrichment was skipped even though the endpoint was online.
+        // Probe all live candidates; TCP probing is also useful for classifying
+        // ping-responsive Windows machines before identity enrichment.
+        const liveIps = candidates.map((candidate) => candidate.ip);
         const tcpResults = await Promise.all(
-          pingDown.map(async (ip) => ({ ip, ...await tcpProbe(ip) }))
+          liveIps.map(async (ip) => ({ ip, ...await tcpProbe(ip) }))
         );
 
-        for (const result of tcpResults.filter((item) => item.reachable)) {
-          candidates.push({
-            ip: result.ip,
-            latencyMs: null,
-            hostname: "",
-            services: result.services,
-            deviceType: result.deviceType,
-            method: "tcp"
-          });
+        for (const result of tcpResults) {
+          const existing = candidates.find((candidate) => candidate.ip === result.ip);
+          if (existing) {
+            if (result.services.length) {
+              existing.services = result.services;
+              existing.deviceType = result.deviceType;
+            }
+          } else if (result.reachable) {
+            candidates.push({
+              ip: result.ip,
+              latencyMs: null,
+              hostname: "",
+              services: result.services,
+              deviceType: result.deviceType,
+              method: "tcp"
+            });
+          }
         }
 
         if (!candidates.length) continue;
