@@ -126,6 +126,7 @@ export async function initDb(): Promise<void> {
     adapter TEXT,
     subnet TEXT,
     method TEXT,
+    identity_diagnostics TEXT,
     device_type TEXT,
     services TEXT,
     latency_ms INTEGER,
@@ -197,6 +198,9 @@ export async function initDb(): Promise<void> {
   if (!networkHosts.some((column) => column.name === "method")) {
     additions.push(run("ALTER TABLE network_hosts ADD COLUMN method TEXT"));
   }
+  if (!networkHosts.some((column) => column.name === "identity_diagnostics")) {
+    additions.push(run("ALTER TABLE network_hosts ADD COLUMN identity_diagnostics TEXT"));
+  }
   if (!networkHosts.some((column) => column.name === "device_type")) {
     additions.push(run("ALTER TABLE network_hosts ADD COLUMN device_type TEXT"));
   }
@@ -218,7 +222,6 @@ export async function initDb(): Promise<void> {
   await run("CREATE INDEX IF NOT EXISTS idx_network_ranges_last_seen ON network_ranges(last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_directory_users_username ON directory_users(username)");
   await run("CREATE INDEX IF NOT EXISTS idx_directory_computers_dns ON directory_computers(dns_host_name)");
-  await run("CREATE INDEX IF NOT EXISTS idx_directory_computers_name ON directory_computers(name)");
-  await run("INSERT OR IGNORE INTO network_ranges(agent_id,subnet,source,first_seen,last_seen) SELECT agent_id,subnet,'observed',MIN(first_seen),MAX(last_seen) FROM network_hosts WHERE subnet<>'' GROUP BY agent_id,subnet");
+
   initialized = true;
 }
