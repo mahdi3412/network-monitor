@@ -270,7 +270,7 @@ async function getWindowsCimIdentity(ip: string) {
 }
 
 async function getNetbiosIdentity(ip: string) {
-  if (process.platform !== "win32") return { hostname: "", username: "" };
+  if (process.platform !== "win32") return { hostname: "", username: "", mac: "" };
 
   try {
     const { stdout } = await execFileAsync("nbtstat", ["-A", ip], {
@@ -281,8 +281,11 @@ async function getNetbiosIdentity(ip: string) {
 
     let hostname = "";
     let username = "";
+    let mac = "";
 
     for (const line of String(stdout || "").split(/\r?\n/)) {
+      const macMatch = line.match(/MAC\s+Address\s*=\s*([0-9a-f]{2}(?:[-:][0-9a-f]{2}){5})/i);
+      if (macMatch?.[1]) mac = macMatch[1].replace(/-/g, ":").toLowerCase();
       const match = line.trim().match(/^(\S+)\s+<([0-9a-f]{2})>\s+(UNIQUE|GROUP)\b/i);
       if (!match) continue;
 
@@ -294,9 +297,9 @@ async function getNetbiosIdentity(ip: string) {
       if (!username && suffix === "03" && kind === "UNIQUE") username = name;
     }
 
-    return { hostname, username };
+    return { hostname, username, mac };
   } catch {
-    return { hostname: "", username: "" };
+    return { hostname: "", username: "", mac: "" };
   }
 }
 
@@ -360,7 +363,7 @@ async function enrichIdentities(hosts: Array<{
           latencyMs: host.latencyMs,
           hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName,
           username: netbios.username || wmi.username || cim.username || sessionUser,
-          mac: arp.get(host.ip) || "",
+          mac: arp.get(host.ip) || netbios.mac || "",
           services: host.services,
           deviceType: host.deviceType === "unknown" && (windowsReachable || wmi.hostname || cim.hostname) ? "windows" : host.deviceType,
           method: host.method,
@@ -426,7 +429,7 @@ export async function scanServerNetworks() {
     const ranges = Array.from(new Set([...detected, ...envConfigured, ...persistedConfigured]));
     const configured = new Set([...envConfigured, ...persistedConfigured]);
     const now = new Date().toISOString();
-    const arp = await getArpTable();
+    const initialArp = await getArpTable();
 
     for (const subnet of ranges) {
       const source = configured.has(subnet) ? "configured" : "server-route";
@@ -513,6 +516,13 @@ export async function scanServerNetworks() {
           })
         );
 
+        // Ping/TCP probes above can populate the Windows neighbor/ARP cache.
+        // Refresh it after probing instead of relying only on the table captured
+        // before the scan started. This is especially important for routed
+        // subnets such as 102/104/106.
+        const refreshedArp = await getArpTable();
+        const arp = new Map(initialArp);
+        for (const [ip, mac] of refreshedArp) arp.set(ip, mac);
         const enriched = await enrichIdentities(withDns, arp);
 
         for (const result of enriched) {
