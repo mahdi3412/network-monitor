@@ -499,8 +499,9 @@ export async function scanServerNetworks() {
         const withDns = await Promise.all(
           candidates.map(async (result) => {
             const reverse = await reverseDns(result.ip);
-            const pingA = reverse ? "skipped" : (await windowsPingHostname(result.ip)) ? "success" : "none";
-            const hostname = reverse || (pingA === "success" ? await windowsPingHostname(result.ip) : "");
+            const pingHostname = reverse ? "" : await windowsPingHostname(result.ip);
+            const pingA = reverse ? "skipped" : (pingHostname ? "success" : "none");
+            const hostname = reverse || pingHostname;
             return {
               ...result,
               hostname,
@@ -516,7 +517,7 @@ export async function scanServerNetworks() {
 
         for (const result of enriched) {
           await run(
-            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,identity_diagnostics,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method=excluded.method,identity_diagnostics=CASE WHEN excluded.identity_diagnostics<>'' THEN excluded.identity_diagnostics ELSE network_hosts.identity_diagnostics END,device_type=CASE WHEN excluded.device_type<>'unknown' THEN excluded.device_type ELSE network_hosts.device_type END,services=CASE WHEN excluded.services<>'[]' THEN excluded.services ELSE network_hosts.services END,latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
+            "INSERT INTO network_hosts(agent_id,ip,hostname,username,mac,adapter,subnet,method,identity_diagnostics,device_type,services,latency_ms,reachable,scanned_at,first_seen,last_seen) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id,ip) DO UPDATE SET hostname=CASE WHEN excluded.hostname<>'' THEN excluded.hostname ELSE network_hosts.hostname END,username=CASE WHEN excluded.username<>'' THEN excluded.username ELSE network_hosts.username END,mac=CASE WHEN excluded.mac<>'' THEN excluded.mac ELSE network_hosts.mac END,subnet=excluded.subnet,method=excluded.method,identity_diagnostics=excluded.identity_diagnostics,device_type=CASE WHEN excluded.device_type<>'unknown' THEN excluded.device_type ELSE network_hosts.device_type END,services=CASE WHEN excluded.services<>'[]' THEN excluded.services ELSE network_hosts.services END,latency_ms=excluded.latency_ms,reachable=1,scanned_at=excluded.scanned_at,last_seen=excluded.last_seen",
             [
               "__server__",
               result.ip,
