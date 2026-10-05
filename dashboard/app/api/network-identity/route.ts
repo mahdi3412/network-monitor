@@ -23,10 +23,14 @@ export async function GET() {
   const unmatched: Array<{
     ip: string;
     hostname: string;
+    username: string;
     deviceType: string;
     services: string[];
     diagnostics: Record<string, string>;
   }> = [];
+
+  let hostsWithUsername = 0;
+  const usernameSamples: Array<{ ip: string; username: string; hostname: string; diagnostics: Record<string, string> }> = [];
 
   for (const row of rows) {
     let diagnostics: Record<string, string> = {};
@@ -41,6 +45,18 @@ export async function GET() {
       }
     }
 
+    if (String(row.username || "").trim()) {
+      hostsWithUsername += 1;
+      if (usernameSamples.length < 50) {
+        usernameSamples.push({
+          ip: String(row.ip || ""),
+          username: String(row.username || ""),
+          hostname: String(row.hostname || ""),
+          diagnostics
+        });
+      }
+    }
+
     if (!String(row.hostname || "").trim()) {
       let services: string[] = [];
       try {
@@ -50,6 +66,7 @@ export async function GET() {
       unmatched.push({
         ip: String(row.ip || ""),
         hostname: "",
+        username: String(row.username || ""),
         deviceType: String(row.device_type || "unknown"),
         services,
         diagnostics
@@ -60,7 +77,9 @@ export async function GET() {
   return NextResponse.json({
     totalHosts: rows.length,
     unmatchedHostname: unmatched.length,
+    hostsWithUsername,
     summary,
+    usernameSamples,
     samples: unmatched.slice(0, 50)
   }, {
     headers: { "Cache-Control": "no-store" }
