@@ -342,7 +342,7 @@ async function enrichIdentities(hosts: Array<{
           (host.services.includes("WINRM") || host.services.includes("WINRMS"));
         const shouldTrySmbName =
           process.platform === "win32" &&
-          (host.services.includes("SMB") || host.services.includes("NETBIOS")) &&
+          windowsReachable &&
           !netbios.hostname;
         const shouldTrySessionUser =
           process.platform === "win32" &&
@@ -363,7 +363,8 @@ async function enrichIdentities(hosts: Array<{
           cim: shouldTryCim ? (cim.hostname || cim.username ? "success" : "none") : "skipped",
           smb: shouldTrySmbName ? (smbName ? "success" : "none") : "skipped",
           queryUser: shouldTrySessionUser ? (sessionUser ? "success" : "none") : "skipped",
-          arp: arp.has(host.ip) ? "success" : "none"
+          arp: arp.has(host.ip) ? "success" : "none",
+          windowsEvidence: windowsReachable ? "success" : "none"
         };
 
         return {
