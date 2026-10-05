@@ -69,6 +69,8 @@ async function runPowerShell(operation: "test" | "user" | "computer", value = ""
 
   const script = String.raw`
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function Escape-Ldap([string]$Value) {
@@ -220,7 +222,6 @@ throw "All configured Active Directory servers failed. Check the server-side err
     NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
     NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0",
     NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute,
-    NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute,
     NETWORK_MONITOR_AD_VALUE: value,
     NETWORK_MONITOR_AD_OPERATION: operation
   };
@@ -291,6 +292,8 @@ export async function syncAdUsers() {
 
   const script = String.raw`
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName System.DirectoryServices.Protocols
 
 function First-AttributeValue($Entry, [string]$Name) {
@@ -399,7 +402,8 @@ throw "All configured Active Directory servers failed."
     NETWORK_MONITOR_AD_USER: config.username,
     NETWORK_MONITOR_AD_PASSWORD: process.env.AD_BIND_PASSWORD || "",
     NETWORK_MONITOR_AD_AUTH_MODE: config.authMode,
-    NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0"
+    NETWORK_MONITOR_AD_SSL: config.ssl ? "1" : "0",
+    NETWORK_MONITOR_AD_PERSONNEL_ATTRIBUTE: config.personnelAttribute
   };
 
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "network-monitor-ad-sync-"));
