@@ -461,8 +461,7 @@ export async function POST(request: Request) {
             hostnameMatch = true;
             macHostnameMatch = Boolean(
               macHostnameCandidate &&
-              shortCandidate === shortHostname(macHostnameCandidate) &&
-              (shortCandidate === shortHostname(macHostnameCandidate))
+              shortCandidate === shortHostname(macHostnameCandidate)
             );
             matchedCandidate = candidate;
             break;
@@ -503,16 +502,6 @@ export async function POST(request: Request) {
             if (matchSamples.dns.length < 10) matchSamples.dns.push(`${matchedCandidate} -> ${host.ip}`);
           }
           if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate); 
-        } else {
-              matchMethodCounts.hostname += 1;
-              if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
-            }
-          } else {
-            dnsMatches += 1;
-            matchMethodCounts.dns += 1;
-            if (matchSamples.dns.length < 10) matchSamples.dns.push(`${matchedCandidate} -> ${host.ip}`);
-          }
-          if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate);
         } else {
           inventoryIpUnmatched += 1;
           const reverseNames = inventoryReverseNames.get(normalizedIp) || [];
