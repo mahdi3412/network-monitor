@@ -460,6 +460,15 @@ export async function POST(request: Request) {
 
         if (ipMatch && (hostnameMatch || dnsMatch)) ipMatchConflicts += 1;
 
+        // MAC+name is an independent confirmation signal. Count it even when
+        // the same host also matches by IP, so the diagnostic is not hidden.
+        if (macHostnameMatch) {
+          matchMethodCounts.macHostname += 1;
+          if (matchSamples.macHostname.length < 10) {
+            matchSamples.macHostname.push(`${matchedCandidate} [MAC-confirmed] -> ${host.ip}`);
+          }
+        }
+
         if (hostnameMatch || dnsMatch || ipMatch) {
           matchedIps.add(host.ip);
           if (ipMatch) {
@@ -470,10 +479,15 @@ export async function POST(request: Request) {
             if (matchSamples.ip.length < 10) matchSamples.ip.push(matchedCandidate);
           } else if (hostnameMatch) {
             hostnameMatches += 1;
-            if (macHostnameMatch) {
-              matchMethodCounts.macHostname += 1;
-              if (matchSamples.macHostname.length < 10) matchSamples.macHostname.push(`${matchedCandidate} [MAC-confirmed] -> ${host.ip}`);
-            } else {
+            matchMethodCounts.hostname += 1;
+            if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
+          } else {
+            dnsMatches += 1;
+            matchMethodCounts.dns += 1;
+            if (matchSamples.dns.length < 10) matchSamples.dns.push(`${matchedCandidate} -> ${host.ip}`);
+          }
+          if (matchedSamples.length < 5) matchedSamples.push(matchedCandidate); 
+        } else {
               matchMethodCounts.hostname += 1;
               if (matchSamples.hostname.length < 10) matchSamples.hostname.push(`${matchedCandidate} -> ${host.ip}`);
             }
