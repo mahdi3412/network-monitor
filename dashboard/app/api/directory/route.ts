@@ -111,9 +111,10 @@ export async function POST(request: Request) {
         ipv4Address: String(computer?.ipv4Address || ""),
         distinguishedName: String(computer?.distinguishedName || "")
       }));
-      const [inventory, directoryComputers] = await Promise.all([
+      const [inventory, directoryComputers, clients] = await Promise.all([
         all<any>("SELECT nh.ip, nh.hostname, nh.mac, nh.subnet, nh.device_type, nh.services, nh.method, nh.last_seen, c.hostname AS agent_hostname, c.mac AS agent_mac FROM network_hosts nh LEFT JOIN clients c ON c.agent_id = nh.agent_id"),
-        all<any>("SELECT name,dns_host_name,ipv4_address FROM directory_computers")
+        all<any>("SELECT name,dns_host_name,ipv4_address FROM directory_computers"),
+        all<any>("SELECT agent_id,ip,mac,hostname,username,personnel_id FROM clients")
       ]);
 
       const names = new Set<string>();
@@ -124,11 +125,23 @@ export async function POST(request: Request) {
       const identityConflicts = { macVsIp: 0, macVsHostname: 0 };
       const identityConflictSamples: string[] = [];
 
+      // Build MAC/IP identity maps from the agent inventory itself, not only
+      // from the network_hosts join. Server-side scans use agent_id=__server__,
+      // so their MAC is often present in network_hosts while agent_mac is empty.
+      // If that MAC belongs to a known agent, its hostname is a valid identity
+      // candidate for AD matching.
+      for (const client of clients) {
+        const mac = normalizeMac(client?.mac);
+        const ip = String(client?.ip || "").trim();
+        if (mac && client?.hostname) clientByMac.set(mac, client);
+        if (ip && client?.hostname) clientByIp.set(ip, client);
+      }
+
       for (const host of inventory) {
-        const mac = normalizeMac(host?.agent_mac);
+        const mac = normalizeMac(host?.agent_mac || host?.mac);
         const ip = String(host?.ip || "").trim();
-        if (mac && host?.agent_hostname) clientByMac.set(mac, host);
-        if (ip && host?.agent_hostname) clientByIp.set(ip, host);
+        if (mac && host?.agent_hostname && !clientByMac.has(mac)) clientByMac.set(mac, host);
+        if (ip && host?.agent_hostname && !clientByIp.has(ip)) clientByIp.set(ip, host);
       }
       const dnsShortNames = new Set<string>();
       const computerByDnsShort = new Map<string, any>();
