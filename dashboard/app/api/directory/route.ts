@@ -596,8 +596,10 @@ export async function POST(request: Request) {
             reason = "not-resolved-in-ad-dns";
           }
           windowsUnmatchedDiagnostics.set(reason, (windowsUnmatchedDiagnostics.get(reason) || 0) + 1);
-          if (windowsUnmatchedSamples.length < 30) {
-            windowsUnmatchedSamples.push(`${normalizedIp} | ${host.hostname || "-"} | ${reason}`);
+          if (windowsUnmatchedSamples.length < 50) {
+            windowsUnmatchedSamples.push(
+              `IP=${normalizedIp} | host=${host.hostname || "-"} | username=${String(host?.username || "-")} | type=${String(host?.device_type || "-")} | services=${String(host?.services || "-")} | diagnostics=${String(host?.identity_diagnostics || "-")} | reason=${reason}`
+            );
           }
         }
         const classStats = inventoryClassificationDiagnostics.get(classification) || { total: 0, matches: 0, unmatched: 0 };
