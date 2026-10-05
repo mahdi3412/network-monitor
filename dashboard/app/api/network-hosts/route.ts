@@ -36,6 +36,12 @@ export async function GET() {
     return at > 0 ? raw.slice(0, at) : raw;
   };
 
+  const personnelNumberFromUsername = (value: unknown) => {
+    const raw = String(value || "").trim();
+    const local = raw.includes("\\") ? raw.slice(raw.lastIndexOf("\\") + 1) : raw;
+    return /^\d{8}$/.test(local) ? local : "";
+  };
+
   const clientByIp = new Map<string, any>();
   const clientByMac = new Map<string, any>();
   const directoryUserByUsername = new Map<string, any>();
@@ -107,7 +113,7 @@ export async function GET() {
     const macClient = rowMac ? clientByMac.get(rowMac) : null;
     const identityClient = client || macClient;
     const effectiveUsername = String(row.username || identityClient?.username || "").trim();
-    const effectivePersonnel = String(row.directory_personnel_id || identityClient?.personnel_id || "").trim();
+    const effectivePersonnel = String(row.directory_personnel_id || identityClient?.personnel_id || personnelNumberFromUsername(row.username || identityClient?.username) || "").trim();
     const directoryUser =
       (effectivePersonnel ? directoryUserByPersonnel.get(effectivePersonnel.toLowerCase()) : null) ||
       (effectiveUsername ? directoryUserByUsername.get(normalizeDirectoryUsername(effectiveUsername)) : null) ||
