@@ -509,6 +509,36 @@ foreach ($serverUrl in $servers) {
       $sb.ToString()
     }
 
+    $adModuleIpv4ByKey = @{}
+    try {
+      Import-Module ActiveDirectory -ErrorAction Stop
+      $adComputerParams = @{
+        LDAPFilter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
+        SearchBase = $baseDn
+        ResultPageSize = 1000
+        Properties = @("IPv4Address")
+        Server = $server
+        ErrorAction = "Stop"
+      }
+      if ($authMode -eq "credentials") {
+        $securePassword = ConvertTo-SecureString ([string]$bindPassword) -AsPlainText -Force
+        $adComputerParams.Credential = [System.Management.Automation.PSCredential]::new([string]$bindUser,$securePassword)
+      }
+      foreach ($adComputer in @(Get-ADComputer @adComputerParams)) {
+        $ip = [string]$adComputer.IPv4Address
+        if (-not $ip) { continue }
+        $dn = [string]$adComputer.DistinguishedName
+        $name = [string]$adComputer.Name
+        $dns = [string]$adComputer.DNSHostName
+        if ($dn) { $adModuleIpv4ByKey["dn:$($dn.ToLowerInvariant())"] = $ip }
+        if ($name) { $adModuleIpv4ByKey["name:$($name.ToLowerInvariant())"] = $ip }
+        if ($dns) { $adModuleIpv4ByKey["dns:$($dns.ToLowerInvariant())"] = $ip }
+      }
+    } catch {
+      # IPv4Address is an AD PowerShell extended property. LDAP sync remains authoritative.
+      $adModuleIpv4ByKey = @{}
+    }
+
     function Add-ComputerEntries($Response, [System.Collections.Generic.List[object]]$Target) {
       foreach ($entry in $Response.Entries) {
         $dn = if ($entry.DistinguishedName) { [string]$entry.DistinguishedName } else { First-AttributeValue $entry "distinguishedName" }
