@@ -146,6 +146,7 @@ export async function POST(request: Request) {
       const dnsShortNames = new Set<string>();
       const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
+      const adIpCandidates = new Map<string, Set<string>>();
       const adDnsIpConflicts = new Map<string, Set<string>>();
       const adComputerIpMap = new Map<string, Set<string>>();
       const computerByName = new Map<string, any>();
@@ -160,8 +161,11 @@ export async function POST(request: Request) {
         }
         const ipv4Address = String(computer.ipv4_address || "").trim();
         if (ipv4Address && !isReservedInventoryIp(ipv4Address)) {
-          computersByIp.set(ipv4Address, computer);
-          adComputerIpMap.set(ipv4Address, new Set([name || dnsHostName || ipv4Address]));
+          const identity = name || dnsHostName || ipv4Address;
+          const candidates = adIpCandidates.get(ipv4Address) || new Set<string>();
+          candidates.add(identity);
+          adIpCandidates.set(ipv4Address, candidates);
+          adComputerIpMap.set(identity, new Set([...(adComputerIpMap.get(identity) || new Set<string>()), ipv4Address]));
         }
         if (dnsHostName) {
           dnsNames.add(dnsHostName);
@@ -279,14 +283,22 @@ export async function POST(request: Request) {
         for (const address of addresses) {
           const ip = String(address || "").trim();
           if (!ip) continue;
-          const existing = computersByIp.get(ip);
-          if (existing && normalizeHostname(existing.name) !== normalizeHostname(computer.name)) {
+          const identity = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name) || ip;
+          const candidates = adIpCandidates.get(ip) || new Set<string>();
+          const hadOtherIdentity = Array.from(candidates).some((value) => value !== identity);
+          candidates.add(identity);
+          adIpCandidates.set(ip, candidates);
+          if (hadOtherIdentity) {
             const set = adDnsIpConflicts.get(ip) || new Set<string>();
-            set.add(String(existing.name || existing.dns_host_name || ""));
-            set.add(String(computer.name || computer.dns_host_name || ""));
+            for (const value of candidates) set.add(value);
             adDnsIpConflicts.set(ip, set);
           }
-          computersByIp.set(ip, computer);
+          const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
+          if (computerKey) {
+            const ips = adComputerIpMap.get(computerKey) || new Set<string>();
+            ips.add(ip);
+            adComputerIpMap.set(computerKey, ips);
+          }
           const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
           if (computerKey) {
             const ips = adComputerIpMap.get(computerKey) || new Set<string>();
@@ -304,6 +316,16 @@ export async function POST(request: Request) {
       const dnsConcurrency = 32;
       for (let i = 0; i < directoryComputers.length; i += dnsConcurrency) {
         await Promise.all(directoryComputers.slice(i, i + dnsConcurrency).map(resolveAdComputerDns));
+      }
+
+      computersByIp.clear();
+      for (const [ip, identities] of adIpCandidates.entries()) {
+        if (identities.size !== 1) continue;
+        const identity = Array.from(identities)[0];
+        const computer = directoryComputers.find((item: any) =>
+          (normalizeHostname(item?.name) || normalizeHostname(item?.dns_host_name) || ip) === identity
+        );
+        if (computer) computersByIp.set(ip, computer);
       }
 
       for (const host of inventory) {
