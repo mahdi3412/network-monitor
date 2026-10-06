@@ -679,6 +679,25 @@ export async function POST(request: Request) {
         .map(([deviceType, stats]) => ({ deviceType, ...stats }))
         .sort((a, b) => b.total - a.total);
 
+      const inventoryIpSet = new Set(inventory.map((host: any) => String(host?.ip || "").trim()).filter(Boolean));
+      const adIpv4Set = new Set<string>();
+      let adIpv4InventoryOverlap = 0;
+      let adIpv4OutsideInventory = 0;
+      let adIpv4Reserved = 0;
+      for (const computer of directoryComputers) {
+        const ip = String(computer.ipv4_address || "").trim();
+        if (!ip) continue;
+        if (isReservedInventoryIp(ip)) {
+          adIpv4Reserved += 1;
+          continue;
+        }
+        adIpv4Set.add(ip);
+      }
+      for (const ip of adIpv4Set) {
+        if (inventoryIpSet.has(ip)) adIpv4InventoryOverlap += 1;
+        else adIpv4OutsideInventory += 1;
+      }
+
       const adComputerIpv4Count = directoryComputers.filter((computer) => {
         const ip = String(computer.ipv4_address || "").trim();
         return Boolean(ip) && !isReservedInventoryIp(ip);
@@ -739,6 +758,10 @@ export async function POST(request: Request) {
         adDnsServerResolved,
         adComputerIpv4Count,
         adComputerIpv4Samples,
+        adIpv4UniqueCount: adIpv4Set.size,
+        adIpv4InventoryOverlap,
+        adIpv4OutsideInventory,
+        adIpv4Reserved,
         adDnsWithName,
         adDnsSystemResolved,
         adDnsDirectResolved,
