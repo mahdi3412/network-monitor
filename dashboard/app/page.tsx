@@ -305,7 +305,15 @@ export default function Home() {
           eligibleInventoryHosts: data.eligibleInventoryHosts || 0,
           reservedInventoryHosts: data.reservedInventoryHosts || 0,
           adComputerIpv4Count: data.adComputerIpv4Count || 0,
-          adComputerIpv4Samples: data.adComputerIpv4Samples || []
+          adComputerIpv4Samples: data.adComputerIpv4Samples || [],
+          noHostnameAdIpDiagnostics: data.noHostnameAdIpDiagnostics || {
+            adIpUnique: 0,
+            adIpConflict: 0,
+            adIpMissing: 0,
+            adDnsResolvable: 0,
+            adDnsMissing: 0,
+            samples: []
+          }
         });
         setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · ذخیره: ${data.persistedComputers ?? 0} · رکورد DB: ${data.directoryComputerRows ?? 0} · Inventory: ${data.inventoryHosts ?? 0} · IP Match: ${data.ipMatches ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · DNS AD: ${data.adDnsWithName ?? 0} نام / ${data.adDnsSystemResolved ?? 0} سیستم / ${data.adDnsDirectResolved ?? 0} مستقیم از AD / ${data.adDnsUnresolved ?? 0} نامشخص · Subnet: ${(data.subnetDiagnostics || []).slice(0, 5).map((x: any) => `${x.subnet}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · Device: ${(data.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · نمونه بدون Match: ${(data.unmatchedSamples || []).slice(0, 5).join(", ") || "-"}`);
         await load();
@@ -482,6 +490,7 @@ export default function Home() {
                     <div><b>میزبان قابل بررسی:</b> {adMatchDiagnostics.eligibleInventoryHosts} · <b>رزرو شده:</b> {adMatchDiagnostics.reservedInventoryHosts}</div>
                     <div><b>روش تطبیق:</b> IP={adMatchDiagnostics.matchMethodCounts.ip || 0} · نام={adMatchDiagnostics.matchMethodCounts.hostname || 0} · DNS={adMatchDiagnostics.matchMethodCounts.dns || 0} · MAC+نام={adMatchDiagnostics.matchMethodCounts.macHostname || 0} · <b>Conflict IP:</b> {adMatchDiagnostics.ipMatchConflicts} · <b>AD DNS چندنامی:</b> {adMatchDiagnostics.adDnsIpConflicts} · <b>یک AD با چند IP:</b> {adMatchDiagnostics.adComputerMultiIpCount} · <b>Conflict هویت:</b> MAC/IP={adMatchDiagnostics.identityConflicts.macVsIp || 0} · MAC/نام={adMatchDiagnostics.identityConflicts.macVsHostname || 0} · <b>DNS/IP ناسازگار:</b> {adMatchDiagnostics.inventoryDnsIpConflicts || 0}</div>
                     <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
+                    <div><b>تحلیل noHostname:</b> AD-IP یکتا={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpUnique || 0} · AD-IP متعارض={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpConflict || 0} · AD-IP ندارد={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpMissing || 0} · AD-DNS قابل تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsResolvable || 0} · AD-DNS بدون تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsMissing || 0}</div>
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
                     {adMatchDiagnostics.adDnsIpConflictSamples?.length > 0 && (
