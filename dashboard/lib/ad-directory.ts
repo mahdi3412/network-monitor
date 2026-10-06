@@ -147,6 +147,36 @@ foreach ($serverUrl in $servers) {
       $escaped = Escape-Ldap $value
       $filter = "(&(objectCategory=computer)(|(name=$escaped)(dNSHostName=$escaped)))"
       $properties = @("name","dNSHostName","ipv4Address","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
+    $adModuleIpv4ByKey = @{}
+    try {
+      Import-Module ActiveDirectory -ErrorAction Stop
+      $adComputerParams = @{
+        LDAPFilter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
+        SearchBase = $baseDn
+        ResultPageSize = 1000
+        Properties = @("IPv4Address")
+        Server = $server
+        ErrorAction = "Stop"
+      }
+      if ($authMode -eq "credentials") {
+        $securePassword = ConvertTo-SecureString ([string]$bindPassword) -AsPlainText -Force
+        $adComputerParams.Credential = [System.Management.Automation.PSCredential]::new([string]$bindUser,$securePassword)
+      }
+      foreach ($adComputer in @(Get-ADComputer @adComputerParams)) {
+        $ip = [string]$adComputer.IPv4Address
+        if (-not $ip) { continue }
+        $dn = [string]$adComputer.DistinguishedName
+        $name = [string]$adComputer.Name
+        $dns = [string]$adComputer.DNSHostName
+        if ($dn) { $adModuleIpv4ByKey["dn:$($dn.ToLowerInvariant())"] = $ip }
+        if ($name) { $adModuleIpv4ByKey["name:$($name.ToLowerInvariant())"] = $ip }
+        if ($dns) { $adModuleIpv4ByKey["dns:$($dns.ToLowerInvariant())"] = $ip }
+      }
+    } catch {
+      # The LDAP sync remains authoritative; IPv4Address is an AD PowerShell
+      # extended property, so absence of the module must not abort the sync.
+      $adModuleIpv4ByKey = @{}
+    }
     } else {
       throw "Unsupported AD operation."
     }
@@ -490,7 +520,15 @@ foreach ($serverUrl in $servers) {
         $Target.Add([PSCustomObject]@{
           name = $name;
           dnsHostName = $dns;
-          ipv4Address = First-AttributeValue $entry "ipv4Address";
+          ipv4Address = $(if ((First-AttributeValue $entry "ipv4Address")) {
+            First-AttributeValue $entry "ipv4Address"
+          } elseif ($dn -and $adModuleIpv4ByKey.ContainsKey("dn:$($dn.ToLowerInvariant())")) {
+            $adModuleIpv4ByKey["dn:$($dn.ToLowerInvariant())"]
+          } elseif ($name -and $adModuleIpv4ByKey.ContainsKey("name:$($name.ToLowerInvariant())")) {
+            $adModuleIpv4ByKey["name:$($name.ToLowerInvariant())"]
+          } elseif ($dns -and $adModuleIpv4ByKey.ContainsKey("dns:$($dns.ToLowerInvariant())")) {
+            $adModuleIpv4ByKey["dns:$($dns.ToLowerInvariant())"]
+          } else { "" });
           operatingSystem = First-AttributeValue $entry "operatingSystem";
           operatingSystemVersion = First-AttributeValue $entry "operatingSystemVersion";
           description = First-AttributeValue $entry "description";
