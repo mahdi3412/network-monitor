@@ -314,7 +314,11 @@ export default function Home() {
             adDnsMissing: 0,
             samples: []
           },
-          adModuleDiagnostics: data.adModuleDiagnostics || null
+          adModuleDiagnostics: data.adModuleDiagnostics || null,
+          adIpv4UniqueCount: data.adIpv4UniqueCount || 0,
+          adIpv4InventoryOverlap: data.adIpv4InventoryOverlap || 0,
+          adIpv4OutsideInventory: data.adIpv4OutsideInventory || 0,
+          adIpv4Reserved: data.adIpv4Reserved || 0
         });
         setAdMessage(`همگام‌سازی AD: ${data.synced} سیستم · ذخیره: ${data.persistedComputers ?? 0} · رکورد DB: ${data.directoryComputerRows ?? 0} · Inventory: ${data.inventoryHosts ?? 0} · IP Match: ${data.ipMatches ?? 0} · نام: ${data.hostnameMatches ?? 0} · DNS: ${data.dnsMatches ?? 0} · DNS AD: ${data.adDnsWithName ?? 0} نام / ${data.adDnsSystemResolved ?? 0} سیستم / ${data.adDnsDirectResolved ?? 0} مستقیم از AD / ${data.adDnsUnresolved ?? 0} نامشخص · Subnet: ${(data.subnetDiagnostics || []).slice(0, 5).map((x: any) => `${x.subnet}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · Device: ${(data.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}`).join(", ") || "-"} · نمونه بدون Match: ${(data.unmatchedSamples || []).slice(0, 5).join(", ") || "-"}`);
         await load();
@@ -493,6 +497,7 @@ export default function Home() {
                     <div><b>علت‌های بدون Match:</b> {Object.entries(adMatchDiagnostics.unmatchedReasonCounts || {}).map(([key, value]) => `${key}=${value}`).join(" · ") || "-"}</div>
                     <div><b>تحلیل noHostname:</b> AD-IP یکتا={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpUnique || 0} · AD-IP متعارض={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpConflict || 0} · AD-IP ندارد={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpMissing || 0} · AD-DNS قابل تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsResolvable || 0} · AD-DNS بدون تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsMissing || 0}</div>
                     <div><b>Get-ADComputer IPv4:</b> module={adMatchDiagnostics.adModuleDiagnostics?.moduleLoaded ? "OK" : "FAIL"} · query={adMatchDiagnostics.adModuleDiagnostics?.querySucceeded ? "OK" : "FAIL"} · scanned={adMatchDiagnostics.adModuleDiagnostics?.scanned || 0} · IPv4={adMatchDiagnostics.adModuleDiagnostics?.withIpv4 || 0} · بدون IPv4={adMatchDiagnostics.adModuleDiagnostics?.withoutIpv4 || 0} · indexed={adMatchDiagnostics.adModuleDiagnostics?.indexedKeys || 0}</div>
+                    <div><b>پوشش IP AD نسبت به Inventory:</b> یکتا={adMatchDiagnostics.adIpv4UniqueCount || 0} · مشترک با Inventory={adMatchDiagnostics.adIpv4InventoryOverlap || 0} · خارج از Inventory={adMatchDiagnostics.adIpv4OutsideInventory || 0} · رزرو شده={adMatchDiagnostics.adIpv4Reserved || 0}</div>
                     {adMatchDiagnostics.adModuleDiagnostics?.errorMessage && <div dir="ltr">[AD-MODULE-ERROR] {adMatchDiagnostics.adModuleDiagnostics.errorType || ""}: {adMatchDiagnostics.adModuleDiagnostics.errorMessage}</div>}
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
