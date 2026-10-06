@@ -376,6 +376,14 @@ export async function POST(request: Request) {
       const macDiagnosticSamples: string[] = [];
       const noHostnameDiagnostics: string[] = [];
       const noHostnameWithUsername = { total: 0, samples: [] as string[] };
+      const noHostnameAdIpDiagnostics = {
+        adIpUnique: 0,
+        adIpConflict: 0,
+        adIpMissing: 0,
+        adDnsResolvable: 0,
+        adDnsMissing: 0,
+        samples: [] as string[]
+      };
       let inventoryIpUnmatched = 0;
       const inventoryBySubnet = new Map<string, { total: number; ipMatches: number; withHostname: number }>();
       const inventoryByDeviceType = new Map<string, { total: number; ipMatches: number }>();
@@ -546,6 +554,22 @@ export async function POST(request: Request) {
 
           if (!hasHostname) {
             unmatchedReason = "noHostname";
+            const adIpCandidatesForHost = adIpCandidates.get(normalizedIp) || new Set<string>();
+            const adIpHasUniqueIdentity = adIpCandidatesForHost.size === 1;
+            const adIpHasConflict = adIpCandidatesForHost.size > 1;
+            const adIpMissing = adIpCandidatesForHost.size === 0;
+            const adDnsResolvable = Boolean(computersByIp.has(normalizedIp));
+            if (adIpHasUniqueIdentity) noHostnameAdIpDiagnostics.adIpUnique += 1;
+            else if (adIpHasConflict) noHostnameAdIpDiagnostics.adIpConflict += 1;
+            else if (adIpMissing) noHostnameAdIpDiagnostics.adIpMissing += 1;
+            if (adDnsResolvable) noHostnameAdIpDiagnostics.adDnsResolvable += 1;
+            else noHostnameAdIpDiagnostics.adDnsMissing += 1;
+            if (noHostnameAdIpDiagnostics.samples.length < 50) {
+              const identities = Array.from(adIpCandidatesForHost).join(",") || "-";
+              noHostnameAdIpDiagnostics.samples.push(
+                `IP=${normalizedIp} | AD-IP=${identities} | AD-IP-status=${adIpHasConflict ? "conflict" : adIpHasUniqueIdentity ? "unique" : "missing"} | AD-DNS=${adDnsResolvable ? "resolves" : "missing"} | type=${String(host?.device_type || "-")} | services=${String(host?.services || "-")}`
+              );
+            }
             if (noHostnameDiagnostics.length < 50) {
               noHostnameDiagnostics.push(
                 `IP=${normalizedIp} | MAC=${hostMac || "-"} | username=${String(host?.username || "-")} | MAC-client=${String(macClient?.hostname || "-")} | IP-client=${String(ipClient?.hostname || "-")} | reverse=${reverseNames.join(",") || "-"} | method=${String(host.method || "-")}`
@@ -734,6 +758,7 @@ export async function POST(request: Request) {
         macDiagnosticSamples,
         noHostnameDiagnostics,
         noHostnameWithUsername,
+        noHostnameAdIpDiagnostics,
         unmatchedSamples,
         unmatchedDiagnostics,
         unmatchedReasonCounts,
