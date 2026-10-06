@@ -243,6 +243,63 @@ async function getWindowsWmiIdentity(ip: string) {
   }
 }
 
+async function getSnmpIdentity(ip: string) {
+  const community = String(process.env.NETWORK_SNMP_COMMUNITY || "").trim();
+  if (!community) return { hostname: "", success: false, status: "disabled" };
+
+  const dgram = await import("node:dgram");
+  const crypto = await import("node:crypto");
+  const length = (n: number) => n < 128 ? Buffer.from([n]) : Buffer.from([0x81, n]);
+  const tlv = (tag: number, value: Buffer) => Buffer.concat([Buffer.from([tag]), length(value.length), value]);
+  const oid = (s: string) => {
+    const p = s.split(".").filter(Boolean).map(Number);
+    const out = [40 * p[0] + p[1]];
+    for (const part of p.slice(2)) {
+      const bytes = [part & 0x7f];
+      let n = part >>> 7;
+      while (n) { bytes.unshift((n & 0x7f) | 0x80); n >>>= 7; }
+      out.push(...bytes);
+    }
+    return tlv(0x06, Buffer.from(out));
+  };
+  const integer = (n: number) => Buffer.from([n & 0xff]);
+  const requestId = crypto.randomInt(1, 0x7fffffff);
+  const vb = tlv(0x30, Buffer.concat([oid("1.3.6.1.2.1.1.5.0"), tlv(0x05, Buffer.alloc(0))]));
+  const pdu = tlv(0xa0, Buffer.concat([
+    tlv(0x02, integer(requestId)),
+    tlv(0x02, Buffer.from([0])),
+    tlv(0x02, Buffer.from([0])),
+    tlv(0x30, vb)
+  ]));
+  const packet = tlv(0x30, Buffer.concat([
+    tlv(0x02, Buffer.from([1])),
+    tlv(0x04, Buffer.from(community)),
+    pdu
+  ]));
+
+  return await new Promise<{ hostname: string; success: boolean; status: string }>((resolve) => {
+    const socket = dgram.createSocket("udp4");
+    let done = false;
+    const finish = (value: { hostname: string; success: boolean; status: string }) => {
+      if (done) return;
+      done = true;
+      try { socket.close(); } catch {}
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish({ hostname: "", success: false, status: "timeout" }), 1600);
+    socket.once("error", () => { clearTimeout(timer); finish({ hostname: "", success: false, status: "error" }); });
+    socket.once("message", (message) => {
+      clearTimeout(timer);
+      const printable = message.toString("latin1").replace(/[^\x20-\x7e]+/g, " ").replace(/\s+/g, " ").trim();
+      const hostname = printable.match(/[A-Za-z0-9][A-Za-z0-9._-]{1,253}/)?.[0] || "";
+      finish({ hostname, success: true, status: "success" });
+    });
+    socket.send(packet, 161, ip, (error) => {
+      if (error) { clearTimeout(timer); finish({ hostname: "", success: false, status: "error" }); }
+    });
+  });
+}
+
 async function getWindowsCimIdentity(ip: string) {
   if (process.platform !== "win32") return { hostname: "", username: "" };
 
@@ -349,11 +406,13 @@ async function enrichIdentities(hosts: Array<{
           windowsReachable &&
           !netbios.username;
 
-        const [wmi, cim, smbName, sessionUser] = await Promise.all([
+        const shouldTrySnmp = process.platform === "win32" && !netbios.hostname;
+        const [wmi, cim, smbName, sessionUser, snmp] = await Promise.all([
           shouldTryWmi ? getWindowsWmiIdentity(host.ip) : Promise.resolve({ hostname: "", username: "" }),
           shouldTryCim ? getWindowsCimIdentity(host.ip) : Promise.resolve({ hostname: "", username: "" }),
           shouldTrySmbName ? getSmbComputerName(host.ip) : Promise.resolve(""),
-          shouldTrySessionUser ? getWindowsSessionUser(host.ip) : Promise.resolve("")
+          shouldTrySessionUser ? getWindowsSessionUser(host.ip) : Promise.resolve(""),
+          shouldTrySnmp ? getSnmpIdentity(host.ip) : Promise.resolve({ hostname: "", success: false, status: "skipped" })
         ]);
 
         const identityDiagnostics = {
@@ -363,6 +422,7 @@ async function enrichIdentities(hosts: Array<{
           cim: shouldTryCim ? (cim.hostname || cim.username ? "success" : "none") : "skipped",
           smb: shouldTrySmbName ? (smbName ? "success" : "none") : "skipped",
           queryUser: shouldTrySessionUser ? (sessionUser ? "success" : "none") : "skipped",
+          snmp: snmp.status,
           arp: arp.has(host.ip) ? "success" : "none",
           directoryIp: directoryByIp.has(host.ip) ? "success" : "none",
           windowsEvidence: windowsReachable ? "success" : "none"
@@ -371,12 +431,12 @@ async function enrichIdentities(hosts: Array<{
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
-          hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName || directoryByIp.get(host.ip)?.hostname || directoryByIp.get(host.ip)?.dnsHostName?.split(".")[0] || "",
+          hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName || snmp.hostname || directoryByIp.get(host.ip)?.hostname || directoryByIp.get(host.ip)?.dnsHostName?.split(".")[0] || "",
           username: netbios.username || wmi.username || cim.username || sessionUser,
           mac: arp.get(host.ip) || netbios.mac || "",
           services: host.services,
           deviceType: host.deviceType === "unknown" && (windowsReachable || wmi.hostname || cim.hostname) ? "windows" : host.deviceType,
-          method: directoryByIp.has(host.ip) && !(host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName) ? `${host.method}+ad-ip` : host.method,
+          method: snmp.success && !host.hostname && !netbios.hostname && !wmi.hostname && !cim.hostname && !smbName ? host.method + "+snmp" : directoryByIp.has(host.ip) && !(host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName) ? host.method + "+ad-ip" : host.method,
           identityDiagnostics: JSON.stringify(identityDiagnostics)
         };
       })
