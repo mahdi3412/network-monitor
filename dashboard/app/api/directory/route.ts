@@ -84,6 +84,7 @@ export async function POST(request: Request) {
 
     if (body?.action === "sync-computers") {
       const computers = await syncAdComputers();
+      const adModuleDiagnostics = (computers as any)?.adModuleDiagnostics || null;
       await initDb();
 
       const syncTime = new Date().toISOString();
@@ -709,6 +710,7 @@ export async function POST(request: Request) {
         persistedComputers: statements.length,
         directoryComputerRows: directoryComputers.length,
         rawComputerSamples,
+        adModuleDiagnostics,
         agentAdDiagnostics: Array.from(agentAdDiagnostics.values()).slice(0, 100),
         adNameSamples,
         adDnsSamples,
