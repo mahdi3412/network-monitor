@@ -453,7 +453,7 @@ $bindUser = $env:NETWORK_MONITOR_AD_USER
 $bindPassword = $env:NETWORK_MONITOR_AD_PASSWORD
 $authMode = $env:NETWORK_MONITOR_AD_AUTH_MODE
 $ssl = $env:NETWORK_MONITOR_AD_SSL -eq "1"
-$properties = @("name","dNSHostName","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
+$properties = @("name","dNSHostName","ipv4Address","operatingSystem","operatingSystemVersion","description","managedBy","distinguishedName")
 
 foreach ($serverUrl in $servers) {
   $connection = $null
