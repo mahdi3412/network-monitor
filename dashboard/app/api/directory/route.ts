@@ -712,6 +712,18 @@ export async function POST(request: Request) {
         else adIpv4OutsideInventory += 1;
       }
 
+      const adIpv4OverlapUnmatchedSamples: string[] = [];
+      for (const host of inventory) {
+        const ip = String(host?.ip || "").trim();
+        if (!ip || isReservedInventoryIp(ip) || !adIpv4Set.has(ip) || computersByIp.has(ip)) continue;
+        const raw = Array.from(adRawIpv4Candidates.get(ip) || []);
+        const all = Array.from(adIpCandidates.get(ip) || []);
+        adIpv4OverlapUnmatchedSamples.push(
+          `IP=${ip} | rawAD=${raw.join(",") || "-"} | allAD=${all.join(",") || "-"} | host=${String(host?.hostname || "-")} | type=${String(host?.device_type || "-")}`
+        );
+        if (adIpv4OverlapUnmatchedSamples.length >= 50) break;
+      }
+
       const adComputerIpv4Count = directoryComputers.filter((computer) => {
         const ip = String(computer.ipv4_address || "").trim();
         return Boolean(ip) && !isReservedInventoryIp(ip);
@@ -776,6 +788,7 @@ export async function POST(request: Request) {
         adIpv4InventoryOverlap,
         adIpv4OutsideInventory,
         adIpv4Reserved,
+        adIpv4OverlapUnmatchedSamples,
         adDnsWithName,
         adDnsSystemResolved,
         adDnsDirectResolved,
