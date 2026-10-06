@@ -148,6 +148,10 @@ export async function POST(request: Request) {
       const computerByDnsShort = new Map<string, any>();
       const computersByIp = new Map<string, any>();
       const adIpCandidates = new Map<string, Set<string>>();
+      // Keep raw AD IPv4 identities separate from DNS-derived identities.
+      // DNS can legitimately add a second AD computer identity to an IP; that
+      // must not hide a unique authoritative IPv4Address value returned by AD.
+      const adRawIpv4Candidates = new Map<string, Set<string>>();
       const adDnsIpConflicts = new Map<string, Set<string>>();
       const adComputerIpMap = new Map<string, Set<string>>();
       const computerByName = new Map<string, any>();
@@ -166,6 +170,9 @@ export async function POST(request: Request) {
           const candidates = adIpCandidates.get(ipv4Address) || new Set<string>();
           candidates.add(identity);
           adIpCandidates.set(ipv4Address, candidates);
+          const rawCandidates = adRawIpv4Candidates.get(ipv4Address) || new Set<string>();
+          rawCandidates.add(identity);
+          adRawIpv4Candidates.set(ipv4Address, rawCandidates);
           adComputerIpMap.set(identity, new Set([...(adComputerIpMap.get(identity) || new Set<string>()), ipv4Address]));
         }
         if (dnsHostName) {
@@ -315,8 +322,13 @@ export async function POST(request: Request) {
 
       computersByIp.clear();
       for (const [ip, identities] of adIpCandidates.entries()) {
-        if (identities.size !== 1) continue;
-        const identity = Array.from(identities)[0];
+        // Prefer the raw AD IPv4Address when it identifies exactly one
+        // computer. DNS-derived identities are enrichment and can conflict
+        // because multiple names may resolve to the same address.
+        const rawIdentities = adRawIpv4Candidates.get(ip) || new Set<string>();
+        const selectedIdentities = rawIdentities.size === 1 ? rawIdentities : identities;
+        if (selectedIdentities.size !== 1) continue;
+        const identity = Array.from(selectedIdentities)[0];
         const computer = directoryComputers.find((item: any) =>
           (normalizeHostname(item?.name) || normalizeHostname(item?.dns_host_name) || ip) === identity
         );
@@ -556,9 +568,11 @@ export async function POST(request: Request) {
           if (!hasHostname) {
             unmatchedReason = "noHostname";
             const adIpCandidatesForHost = adIpCandidates.get(normalizedIp) || new Set<string>();
-            const adIpHasUniqueIdentity = adIpCandidatesForHost.size === 1;
-            const adIpHasConflict = adIpCandidatesForHost.size > 1;
-            const adIpMissing = adIpCandidatesForHost.size === 0;
+            const rawAdIpCandidatesForHost = adRawIpv4Candidates.get(normalizedIp) || new Set<string>();
+            const effectiveAdIpCandidates = rawAdIpCandidatesForHost.size === 1 ? rawAdIpCandidatesForHost : adIpCandidatesForHost;
+            const adIpHasUniqueIdentity = effectiveAdIpCandidates.size === 1;
+            const adIpHasConflict = effectiveAdIpCandidates.size > 1;
+            const adIpMissing = effectiveAdIpCandidates.size === 0;
             const adDnsResolvable = Boolean(computersByIp.has(normalizedIp));
             if (adIpHasUniqueIdentity) noHostnameAdIpDiagnostics.adIpUnique += 1;
             else if (adIpHasConflict) noHostnameAdIpDiagnostics.adIpConflict += 1;
@@ -566,7 +580,7 @@ export async function POST(request: Request) {
             if (adDnsResolvable) noHostnameAdIpDiagnostics.adDnsResolvable += 1;
             else noHostnameAdIpDiagnostics.adDnsMissing += 1;
             if (noHostnameAdIpDiagnostics.samples.length < 50) {
-              const identities = Array.from(adIpCandidatesForHost).join(",") || "-";
+              const identities = Array.from(effectiveAdIpCandidates).join(",") || "-";
               noHostnameAdIpDiagnostics.samples.push(
                 `IP=${normalizedIp} | AD-IP=${identities} | AD-IP-status=${adIpHasConflict ? "conflict" : adIpHasUniqueIdentity ? "unique" : "missing"} | AD-DNS=${adDnsResolvable ? "resolves" : "missing"} | type=${String(host?.device_type || "-")} | services=${String(host?.services || "-")}`
               );
