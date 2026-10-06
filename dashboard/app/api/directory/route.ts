@@ -299,12 +299,6 @@ export async function POST(request: Request) {
             ips.add(ip);
             adComputerIpMap.set(computerKey, ips);
           }
-          const computerKey = normalizeHostname(computer.name) || normalizeHostname(computer.dns_host_name);
-          if (computerKey) {
-            const ips = adComputerIpMap.get(computerKey) || new Set<string>();
-            ips.add(ip);
-            adComputerIpMap.set(computerKey, ips);
-          }
         }
         if (adDnsResolutionSamples.length < 10) {
           adDnsResolutionSamples.push(`${dnsHostName} -> ${addresses.join(",")}`);
