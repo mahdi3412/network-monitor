@@ -315,6 +315,8 @@ export default function Home() {
             samples: []
           },
           adModuleDiagnostics: data.adModuleDiagnostics || null,
+          duplicateAdNames: data.duplicateAdNames || [],
+          adIpv4OverlapUnmatchedSamples: data.adIpv4OverlapUnmatchedSamples || [],
           adIpv4UniqueCount: data.adIpv4UniqueCount || 0,
           adIpv4InventoryOverlap: data.adIpv4InventoryOverlap || 0,
           adIpv4OutsideInventory: data.adIpv4OutsideInventory || 0,
@@ -498,6 +500,18 @@ export default function Home() {
                     <div><b>تحلیل noHostname:</b> AD-IP یکتا={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpUnique || 0} · AD-IP متعارض={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpConflict || 0} · AD-IP ندارد={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adIpMissing || 0} · AD-DNS قابل تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsResolvable || 0} · AD-DNS بدون تطبیق={adMatchDiagnostics.noHostnameAdIpDiagnostics?.adDnsMissing || 0}</div>
                     <div><b>Get-ADComputer IPv4:</b> module={adMatchDiagnostics.adModuleDiagnostics?.moduleLoaded ? "OK" : "FAIL"} · query={adMatchDiagnostics.adModuleDiagnostics?.querySucceeded ? "OK" : "FAIL"} · scanned={adMatchDiagnostics.adModuleDiagnostics?.scanned || 0} · IPv4={adMatchDiagnostics.adModuleDiagnostics?.withIpv4 || 0} · بدون IPv4={adMatchDiagnostics.adModuleDiagnostics?.withoutIpv4 || 0} · indexed={adMatchDiagnostics.adModuleDiagnostics?.indexedKeys || 0}</div>
                     <div><b>پوشش IP AD نسبت به Inventory:</b> یکتا={adMatchDiagnostics.adIpv4UniqueCount || 0} · مشترک با Inventory={adMatchDiagnostics.adIpv4InventoryOverlap || 0} · خارج از Inventory={adMatchDiagnostics.adIpv4OutsideInventory || 0} · رزرو شده={adMatchDiagnostics.adIpv4Reserved || 0}</div>
+                    {adMatchDiagnostics.duplicateAdNames?.length > 0 && (
+                      <>
+                        <b>نام‌های تکراری در خروجی AD</b>
+                        {adMatchDiagnostics.duplicateAdNames.map((item: any) => <div key={item.name} dir="ltr">[AD-DUPLICATE-NAME] {item.name} × {item.count}</div>)}
+                      </>
+                    )}
+                    {adMatchDiagnostics.adIpv4OverlapUnmatchedSamples?.length > 0 && (
+                      <>
+                        <b>IPهای مشترک AD و Inventory که هنوز Match نشده‌اند</b>
+                        {adMatchDiagnostics.adIpv4OverlapUnmatchedSamples.map((item: string) => <div key={item} dir="ltr">[AD-IP-OVERLAP-UNMATCHED] {item}</div>)}
+                      </>
+                    )}
                     {adMatchDiagnostics.adModuleDiagnostics?.errorMessage && <div dir="ltr">[AD-MODULE-ERROR] {adMatchDiagnostics.adModuleDiagnostics.errorType || ""}: {adMatchDiagnostics.adModuleDiagnostics.errorMessage}</div>}
                     <div><b>Device:</b> {(adMatchDiagnostics.deviceTypeDiagnostics || []).map((x: any) => `${x.deviceType}=${x.total}/${x.ipMatches}/${x.unmatched}`).join(" · ") || "-"}</div>
                     <hr />
