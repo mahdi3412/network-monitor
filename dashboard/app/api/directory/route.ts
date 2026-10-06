@@ -88,6 +88,17 @@ export async function POST(request: Request) {
       await initDb();
 
       const syncTime = new Date().toISOString();
+      const duplicateAdNameDiagnostics = new Map<string, number>();
+      for (const computer of computers) {
+        const name = String(computer?.name || "").trim().toLowerCase();
+        if (name) duplicateAdNameDiagnostics.set(name, (duplicateAdNameDiagnostics.get(name) || 0) + 1);
+      }
+      const duplicateAdNames = Array.from(duplicateAdNameDiagnostics.entries())
+        .filter(([, count]) => count > 1)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 50);
+
       const statements = computers
         .map((computer: any) => {
           const dnsHostName = String(computer?.dnsHostName || "").trim();
@@ -321,17 +332,21 @@ export async function POST(request: Request) {
       }
 
       computersByIp.clear();
+      const computerByIdentity = new Map<string, any>();
+      for (const computer of directoryComputers) {
+        const name = normalizeHostname(computer?.name);
+        const dnsHostName = normalizeHostname(computer?.dns_host_name);
+        if (name && !computerByIdentity.has(name)) computerByIdentity.set(name, computer);
+        if (dnsHostName && !computerByIdentity.has(dnsHostName)) computerByIdentity.set(dnsHostName, computer);
+      }
       for (const [ip, identities] of adIpCandidates.entries()) {
-        // Prefer the raw AD IPv4Address when it identifies exactly one
-        // computer. DNS-derived identities are enrichment and can conflict
-        // because multiple names may resolve to the same address.
+        // Prefer a unique raw AD IPv4Address identity. DNS-derived identities
+        // are enrichment and may legitimately introduce conflicts.
         const rawIdentities = adRawIpv4Candidates.get(ip) || new Set<string>();
         const selectedIdentities = rawIdentities.size === 1 ? rawIdentities : identities;
         if (selectedIdentities.size !== 1) continue;
         const identity = Array.from(selectedIdentities)[0];
-        const computer = directoryComputers.find((item: any) =>
-          (normalizeHostname(item?.name) || normalizeHostname(item?.dns_host_name) || ip) === identity
-        );
+        const computer = computerByIdentity.get(identity);
         if (computer) computersByIp.set(ip, computer);
       }
 
@@ -718,8 +733,15 @@ export async function POST(request: Request) {
         if (!ip || isReservedInventoryIp(ip) || !adIpv4Set.has(ip) || computersByIp.has(ip)) continue;
         const raw = Array.from(adRawIpv4Candidates.get(ip) || []);
         const all = Array.from(adIpCandidates.get(ip) || []);
+        const selected = raw.length === 1 ? raw : all;
+        const identitiesWithRecords = selected.map((identity) => ({
+          identity,
+          byIdentity: Boolean(computerByIdentity.get(identity)),
+          name: String(computerByIdentity.get(identity)?.name || ""),
+          dnsHostName: String(computerByIdentity.get(identity)?.dns_host_name || "")
+        }));
         adIpv4OverlapUnmatchedSamples.push(
-          `IP=${ip} | rawAD=${raw.join(",") || "-"} | allAD=${all.join(",") || "-"} | host=${String(host?.hostname || "-")} | type=${String(host?.device_type || "-")}`
+          `IP=${ip} | rawAD=${raw.join(",") || "-"} | allAD=${all.join(",") || "-"} | selected=${selected.join(",") || "-"} | records=${identitiesWithRecords.map((x) => `${x.identity}=>${x.byIdentity ? "FOUND" : "MISSING"}`).join(",") || "-"} | host=${String(host?.hostname || "-")} | type=${String(host?.device_type || "-")}`
         );
         if (adIpv4OverlapUnmatchedSamples.length >= 50) break;
       }
@@ -755,6 +777,7 @@ export async function POST(request: Request) {
         persistedComputers: statements.length,
         directoryComputerRows: directoryComputers.length,
         rawComputerSamples,
+        duplicateAdNames,
         adModuleDiagnostics,
         agentAdDiagnostics: Array.from(agentAdDiagnostics.values()).slice(0, 100),
         adNameSamples,
