@@ -356,6 +356,7 @@ export async function POST(request: Request) {
       let dnsMatches = 0;
       let ipMatches = 0;
       let ipMatchConflicts = 0;
+      const ipMatchConflictSamples: string[] = [];
       const matchMethodCounts = { ip: 0, hostname: 0, dns: 0, macHostname: 0 };
       const matchSamples = { ip: [] as string[], hostname: [] as string[], dns: [] as string[], macHostname: [] as string[] };
 
@@ -490,7 +491,17 @@ export async function POST(request: Request) {
           }
         }
 
-        if (ipMatch && (hostnameMatch || dnsMatch)) ipMatchConflicts += 1;
+        if (ipMatch && (hostnameMatch || dnsMatch)) {
+          const ipIdentity = normalizeHostname(ipComputer?.name) || normalizeHostname(ipComputer?.dns_host_name);
+          const discoveredIdentity = normalizeHostname(matchedCandidate);
+          const identitiesDiffer = Boolean(ipIdentity && discoveredIdentity && shortHostname(ipIdentity) !== shortHostname(discoveredIdentity));
+          if (identitiesDiffer) {
+            ipMatchConflicts += 1;
+            if (ipMatchConflictSamples.length < 50) {
+              ipMatchConflictSamples.push(`${normalizedIp} | IP->${ipIdentity} | identity->${discoveredIdentity}`);
+            }
+          }
+        }
 
         // MAC+name is an independent confirmation signal. Count it even when
         // the same host also matches by IP, so the diagnostic is not hidden.
@@ -710,6 +721,7 @@ export async function POST(request: Request) {
         matchMethodCounts,
         matchSamples,
         ipMatchConflicts,
+        ipMatchConflictSamples,
         adDnsIpConflicts: adDnsIpConflicts.size,
         adDnsIpConflictSamples,
         adComputerMultiIpCount,
