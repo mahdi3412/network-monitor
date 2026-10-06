@@ -1,7 +1,7 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
 import net from "node:net";
-import { initDb, run, runWithId } from "./db";
+import { all, initDb, run, runWithId } from "./db";
 import {
   configuredNetworkRanges,
   persistedConfiguredNetworkRanges
@@ -319,7 +319,7 @@ async function enrichIdentities(hosts: Array<{
   deviceType: string;
   method: string;
   identityDiagnostics?: Record<string, string>;
-}>, arp: Map<string, string>) {
+}>, arp: Map<string, string>, directoryByIp: Map<string, { hostname: string; dnsHostName: string }>) {
   const enriched = [];
 
   for (let index = 0; index < hosts.length; index += 16) {
@@ -364,18 +364,19 @@ async function enrichIdentities(hosts: Array<{
           smb: shouldTrySmbName ? (smbName ? "success" : "none") : "skipped",
           queryUser: shouldTrySessionUser ? (sessionUser ? "success" : "none") : "skipped",
           arp: arp.has(host.ip) ? "success" : "none",
+          directoryIp: directoryByIp.has(host.ip) ? "success" : "none",
           windowsEvidence: windowsReachable ? "success" : "none"
         };
 
         return {
           ip: host.ip,
           latencyMs: host.latencyMs,
-          hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName,
+          hostname: host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName || directoryByIp.get(host.ip)?.hostname || directoryByIp.get(host.ip)?.dnsHostName?.split(".")[0] || "",
           username: netbios.username || wmi.username || cim.username || sessionUser,
           mac: arp.get(host.ip) || netbios.mac || "",
           services: host.services,
           deviceType: host.deviceType === "unknown" && (windowsReachable || wmi.hostname || cim.hostname) ? "windows" : host.deviceType,
-          method: host.method,
+          method: directoryByIp.has(host.ip) && !(host.hostname || netbios.hostname || wmi.hostname || cim.hostname || smbName) ? `${host.method}+ad-ip` : host.method,
           identityDiagnostics: JSON.stringify(identityDiagnostics)
         };
       })
@@ -426,6 +427,24 @@ export async function scanServerNetworks() {
 
   try {
     await initDb();
+
+    // AD sync already stores authoritative computer/IP associations. Use them
+    // as a final identity fallback when endpoint-side discovery is blocked.
+    // This is strictly IP -> AD computer identity; username/MAC are not used
+    // to infer a computer.
+    const directoryByIp = new Map<string, { hostname: string; dnsHostName: string }>();
+    try {
+      const directoryRows = await all<any>("SELECT name,dns_host_name,ipv4_address FROM directory_computers WHERE trim(ipv4_address)<>''");
+      for (const row of directoryRows) {
+        const ip = String(row?.ipv4_address || "").trim();
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(ip)) continue;
+        const hostname = String(row?.name || "").trim();
+        const dnsHostName = String(row?.dns_host_name || "").trim();
+        if (ip && (hostname || dnsHostName) && !directoryByIp.has(ip)) {
+          directoryByIp.set(ip, { hostname, dnsHostName });
+        }
+      }
+    } catch {}
 
     runId = await runWithId(
       "INSERT INTO network_scan_runs(started_at,status) VALUES(?,?)",
@@ -545,7 +564,7 @@ export async function scanServerNetworks() {
         const refreshedArp = await getArpTable();
         const arp = new Map(initialArp);
         for (const [ip, mac] of refreshedArp) arp.set(ip, mac);
-        const enriched = await enrichIdentities(withDns, arp);
+        const enriched = await enrichIdentities(withDns, arp, directoryByIp);
 
         for (const result of enriched) {
           await run(
