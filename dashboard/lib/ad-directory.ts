@@ -510,8 +510,19 @@ foreach ($serverUrl in $servers) {
     }
 
     $adModuleIpv4ByKey = @{}
+    $adModuleDiagnostics = [PSCustomObject]@{
+      moduleLoaded = $false
+      querySucceeded = $false
+      scanned = 0
+      withIpv4 = 0
+      withoutIpv4 = 0
+      indexedKeys = 0
+      errorType = ""
+      errorMessage = ""
+    }
     try {
       Import-Module ActiveDirectory -ErrorAction Stop
+      $adModuleDiagnostics.moduleLoaded = $true
       $adComputerParams = @{
         LDAPFilter = "(&(objectCategory=computer)(objectClass=computer)(dNSHostName=*))"
         SearchBase = $baseDn
@@ -525,8 +536,13 @@ foreach ($serverUrl in $servers) {
         $adComputerParams.Credential = [System.Management.Automation.PSCredential]::new([string]$bindUser,$securePassword)
       }
       foreach ($adComputer in @(Get-ADComputer @adComputerParams)) {
+        $adModuleDiagnostics.scanned += 1
         $ip = [string]$adComputer.IPv4Address
-        if (-not $ip) { continue }
+        if (-not $ip) {
+          $adModuleDiagnostics.withoutIpv4 += 1
+          continue
+        }
+        $adModuleDiagnostics.withIpv4 += 1
         $dn = [string]$adComputer.DistinguishedName
         $name = [string]$adComputer.Name
         $dns = [string]$adComputer.DNSHostName
@@ -534,7 +550,11 @@ foreach ($serverUrl in $servers) {
         if ($name) { $adModuleIpv4ByKey["name:$($name.ToLowerInvariant())"] = $ip }
         if ($dns) { $adModuleIpv4ByKey["dns:$($dns.ToLowerInvariant())"] = $ip }
       }
+      $adModuleDiagnostics.querySucceeded = $true
+      $adModuleDiagnostics.indexedKeys = $adModuleIpv4ByKey.Count
     } catch {
+      $adModuleDiagnostics.errorType = $_.Exception.GetType().FullName
+      $adModuleDiagnostics.errorMessage = $_.Exception.Message
       # IPv4Address is an AD PowerShell extended property. LDAP sync remains authoritative.
       $adModuleIpv4ByKey = @{}
     }
@@ -697,7 +717,7 @@ foreach ($serverUrl in $servers) {
       if ($seen.Add($key)) { $uniqueComputers.Add($computer) }
     }
 
-    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($uniqueComputers) } | ConvertTo-Json -Compress -Depth 6
+    [PSCustomObject]@{ ok = $true; server = $server; port = $port; ssl = $useSsl; computers = @($uniqueComputers); adModuleDiagnostics = $adModuleDiagnostics } | ConvertTo-Json -Compress -Depth 6
     exit
   } catch {
     $detail = $_.Exception; $ldap = $_.Exception.InnerException
@@ -729,7 +749,13 @@ throw "All configured Active Directory servers failed."
     const output = String(stdout || "").trim();
     if (!output) throw new Error(String(stderr || "").trim() || "Active Directory returned an empty response.");
     const parsed = JSON.parse(output);
-    return Array.isArray(parsed?.computers) ? parsed.computers : [];
+    const computers = Array.isArray(parsed?.computers) ? parsed.computers : [];
+    Object.defineProperty(computers, "adModuleDiagnostics", {
+      value: parsed?.adModuleDiagnostics || null,
+      enumerable: false,
+      configurable: true
+    });
+    return computers;
   } catch (error: any) {
     const stderr = String(error?.stderr || "").trim();
     const message = String(error?.message || error);
