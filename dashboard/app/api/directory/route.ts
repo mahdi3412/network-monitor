@@ -333,12 +333,20 @@ export async function POST(request: Request) {
 
       computersByIp.clear();
       const computerByIdentity = new Map<string, any>();
+      const computerByRawIp = new Map<string, any>();
+      const duplicateRawIp = new Set<string>();
       for (const computer of directoryComputers) {
         const name = normalizeHostname(computer?.name);
         const dnsHostName = normalizeHostname(computer?.dns_host_name);
         if (name && !computerByIdentity.has(name)) computerByIdentity.set(name, computer);
         if (dnsHostName && !computerByIdentity.has(dnsHostName)) computerByIdentity.set(dnsHostName, computer);
+        const rawIp = String(computer?.ipv4_address || "").trim();
+        if (rawIp && !isReservedInventoryIp(rawIp)) {
+          if (computerByRawIp.has(rawIp)) duplicateRawIp.add(rawIp);
+          else computerByRawIp.set(rawIp, computer);
+        }
       }
+      for (const ip of duplicateRawIp) computerByRawIp.delete(ip);
       for (const [ip, identities] of adIpCandidates.entries()) {
         // Prefer a unique raw AD IPv4Address identity. DNS-derived identities
         // are enrichment and may legitimately introduce conflicts.
@@ -346,7 +354,9 @@ export async function POST(request: Request) {
         const selectedIdentities = rawIdentities.size === 1 ? rawIdentities : identities;
         if (selectedIdentities.size !== 1) continue;
         const identity = Array.from(selectedIdentities)[0];
-        const computer = computerByIdentity.get(identity);
+        const computer = computerByIdentity.get(identity) || (
+          rawIdentities.size === 1 ? computerByRawIp.get(ip) : undefined
+        );
         if (computer) computersByIp.set(ip, computer);
       }
 
