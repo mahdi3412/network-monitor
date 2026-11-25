@@ -6,6 +6,8 @@ const dataDir = path.join(process.cwd(), "data");
 fs.mkdirSync(dataDir, { recursive: true });
 
 const db = new sqlite3.Database(path.join(dataDir, "network-monitor.db"));
+// در نوشتن هم‌زمان heartbeat ایجنت‌ها به‌جای خطای SQLITE_BUSY تا ۵ ثانیه صبر کن
+db.configure("busyTimeout", 5000);
 let initialized = false;
 
 export function all<T = any>(sql: string, params: any[] = []): Promise<T[]> {
@@ -61,6 +63,10 @@ export function runWithId(sql: string, params: any[] = []): Promise<number> {
 
 export async function initDb(): Promise<void> {
   if (initialized) return;
+
+  // WAL: خواندن داشبورد، نوشتن heartbeat را قفل نمی‌کند (برای ۱۰۰۰ کلاینت لازم است)
+  await all("PRAGMA journal_mode=WAL");
+  await run("PRAGMA synchronous=NORMAL");
 
   await run(`CREATE TABLE IF NOT EXISTS clients (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -222,6 +228,17 @@ export async function initDb(): Promise<void> {
   await run("CREATE INDEX IF NOT EXISTS idx_network_ranges_last_seen ON network_ranges(last_seen)");
   await run("CREATE INDEX IF NOT EXISTS idx_directory_users_username ON directory_users(username)");
   await run("CREATE INDEX IF NOT EXISTS idx_directory_computers_dns ON directory_computers(dns_host_name)");
+
+  // ایندکس‌های لازم برای ۱۰۰۰ کلاینت
+  await run("CREATE INDEX IF NOT EXISTS idx_heartbeats_received_at ON heartbeats(received_at)");
+  await run("CREATE INDEX IF NOT EXISTS idx_heartbeats_agent_received ON heartbeats(agent_id,received_at DESC)");
+  await run("CREATE INDEX IF NOT EXISTS idx_clients_last_seen ON clients(last_seen)");
+  await run("CREATE INDEX IF NOT EXISTS idx_clients_ip ON clients(ip)");
+  await run("CREATE INDEX IF NOT EXISTS idx_clients_mac ON clients(mac)");
+  await run("CREATE INDEX IF NOT EXISTS idx_clients_hostname ON clients(hostname)");
+  await run("CREATE INDEX IF NOT EXISTS idx_clients_personnel ON clients(personnel_id)");
+  // heartbeat با lower(username)=lower(?) جستجو می‌کند؛ ایندکس معمولی روی username استفاده نمی‌شود
+  await run("CREATE INDEX IF NOT EXISTS idx_directory_users_username_lower ON directory_users(lower(username))");
 
   initialized = true;
 }

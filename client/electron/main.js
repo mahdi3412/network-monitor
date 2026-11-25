@@ -17,7 +17,7 @@ const idPath = path.join(app.getPath("userData"), "agent-id");
 // سرور آن‌ها را بر اساس username کاربر لاگین‌شده از Active Directory پیدا می‌کند.
 const defaults = {
   serverUrl: "http://localhost:3000",
-  heartbeatSeconds: 30
+  heartbeatSeconds: 60
 };
 
 let mainWindow = null;
@@ -30,7 +30,8 @@ let runtime = {
   lastSuccess: null,
   lastError: "",
   lastLatencyMs: null,
-  nextHeartbeat: null
+  nextHeartbeat: null,
+  serverIntervalSeconds: null
 };
 
 /* ---------- ذخیره‌سازی محلی ---------- */
@@ -210,6 +211,11 @@ async function heartbeat() {
     }
     const data = await response.json();
     if (data.agentKey) saveKey(data.agentKey);
+    // فاصله heartbeat را سرور تعیین می‌کند (برای کنترل مرکزی بار در ۱۰۰۰ کلاینت)
+    const serverInterval = Number(data.heartbeatSeconds);
+    if (Number.isFinite(serverInterval) && serverInterval > 0) {
+      runtime.serverIntervalSeconds = Math.min(600, Math.max(10, serverInterval));
+    }
     runtime.connected = true;
     runtime.lastSuccess = new Date().toISOString();
   } catch (e) {
@@ -222,7 +228,9 @@ async function heartbeat() {
 
 function scheduleHeartbeat() {
   if (heartbeatTimer) clearTimeout(heartbeatTimer);
-  const seconds = Math.max(10, Number(getConfig().heartbeatSeconds) || 30);
+  const base = runtime.serverIntervalSeconds || Math.max(10, Number(getConfig().heartbeatSeconds) || 60);
+  // ±10% جابه‌جایی تصادفی تا ایجنت‌ها هم‌زمان درخواست نفرستند
+  const seconds = base * (0.9 + Math.random() * 0.2);
   runtime.nextHeartbeat = new Date(Date.now() + seconds * 1000).toISOString();
   heartbeatTimer = setTimeout(heartbeat, seconds * 1000);
 }
@@ -249,7 +257,7 @@ ipcMain.handle("save-config", (_, incoming) => {
   if (!/^https?:\/\//i.test(serverUrl)) serverUrl = "http://" + serverUrl;
   saveConfig({
     serverUrl,
-    heartbeatSeconds: Math.max(10, Number(incoming?.heartbeatSeconds) || 30)
+    heartbeatSeconds: Math.max(10, Number(incoming?.heartbeatSeconds) || 60)
   });
   scheduleHeartbeat();
   heartbeat();
@@ -277,7 +285,9 @@ if (!gotLock) {
     await refreshNetworkInfo();
     // با --hidden ایجنت بدون پنجره و در پس‌زمینه اجرا می‌شود (برای استقرار با GPO)
     if (!hiddenMode) createWindow();
-    heartbeat();
+    // در حالت پس‌زمینه، شروع heartbeat با تأخیر تصادفی (تا ۳۰ ثانیه) تا بعد از راه‌اندازی هم‌زمان سیستم‌ها فشار ناگهانی به سرور نیاید
+    if (hiddenMode) setTimeout(heartbeat, Math.random() * 30000);
+    else heartbeat();
   });
 
   app.on("window-all-closed", () => {

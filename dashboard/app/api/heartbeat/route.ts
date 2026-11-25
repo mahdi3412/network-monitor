@@ -2,10 +2,29 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { all, initDb, run } from "../../../lib/db";
 import { configuredNetworkRanges, inputNetworkRanges } from "../../../lib/network-ranges";
+import {
+  heartbeatHistoryMinutes,
+  heartbeatIntervalSeconds,
+  heartbeatRetentionDays
+} from "../../../lib/heartbeat-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// حذف تاریخچه قدیمی حداکثر ساعتی یک‌بار و بدون معطل کردن پاسخ ایجنت
+let lastPruneAt = 0;
+function pruneHeartbeats() {
+  const now = Date.now();
+  if (now - lastPruneAt < 60 * 60 * 1000) return;
+  lastPruneAt = now;
+  const cutoff = new Date(now - heartbeatRetentionDays() * 24 * 60 * 60 * 1000).toISOString();
+  run("DELETE FROM heartbeats WHERE received_at < ?", [cutoff]).catch((error) =>
+    console.error("heartbeat prune failed", error)
+  );
+}
+
+const same = (a: unknown, b: unknown) => String(a ?? "") === String(b ?? "");
 
 type AdIdentity = { firstName: string; lastName: string; personnelId: string };
 
@@ -52,7 +71,7 @@ export async function POST(req: Request) {
     const latencyMs = Number.isFinite(rawLatency) ? Math.max(0, Math.round(rawLatency)) : null;
 
     const existing = await all<any>(
-      "SELECT api_key_hash FROM clients WHERE agent_id=?",
+      "SELECT api_key_hash,ip,hostname,username FROM clients WHERE agent_id=?",
       [agentId]
     );
 
@@ -81,10 +100,26 @@ export async function POST(req: Request) {
       ]
     );
 
-    await run(
-      "INSERT INTO heartbeats(agent_id,ip,hostname,username,received_at,latency_ms) VALUES(?,?,?,?,?,?)",
-      [agentId, body.ip, body.hostname, body.username, now, latencyMs]
-    );
+    // تاریخچه فقط هنگام تغییر IP/نام/کاربر یا حداکثر هر HEARTBEAT_HISTORY_MINUTES دقیقه ذخیره می‌شود
+    const previous = existing[0];
+    let writeHistory =
+      !previous ||
+      !same(previous.ip, body.ip) ||
+      !same(previous.hostname, body.hostname) ||
+      !same(previous.username, body.username);
+
+    if (!writeHistory) {
+      const last = await all<any>("SELECT MAX(received_at) AS t FROM heartbeats WHERE agent_id=?", [agentId]);
+      const lastMs = last[0]?.t ? new Date(last[0].t).getTime() : 0;
+      writeHistory = Date.now() - lastMs >= heartbeatHistoryMinutes() * 60 * 1000;
+    }
+
+    if (writeHistory) {
+      await run(
+        "INSERT INTO heartbeats(agent_id,ip,hostname,username,received_at,latency_ms) VALUES(?,?,?,?,?,?)",
+        [agentId, body.ip, body.hostname, body.username, now, latencyMs]
+      );
+    }
 
     const hosts = Array.isArray(body.networkHosts) ? body.networkHosts : [];
 
@@ -137,14 +172,12 @@ export async function POST(req: Request) {
       );
     }
 
-    await run(
-      "DELETE FROM heartbeats WHERE received_at < ?",
-      [new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]
-    );
+    pruneHeartbeats();
 
     return NextResponse.json({
       ok: true,
       serverTime: now,
+      heartbeatSeconds: heartbeatIntervalSeconds(),
       agentKey: existing.length ? undefined : apiKey,
       receivedHosts: hosts.length,
       knownRanges: allRanges.length
