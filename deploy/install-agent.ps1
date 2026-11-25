@@ -58,8 +58,11 @@ try {
   & icacls $dataDir /grant "*S-1-5-32-545:(OI)(CI)M" /Q | Out-Null
 
   # 3) Machine-wide config (no BOM). This server URL overrides any per-user setting.
+  #    The file is made read-only for normal users so only admins/SYSTEM can change the server URL.
+  $configFile = Join-Path $dataDir "config.json"
   $config = @{ serverUrl = $ServerUrl.TrimEnd("/") } | ConvertTo-Json
-  [IO.File]::WriteAllText((Join-Path $dataDir "config.json"), $config, $utf8NoBom)
+  [IO.File]::WriteAllText($configFile, $config, $utf8NoBom)
+  & icacls $configFile /inheritance:r /grant "*S-1-5-18:(F)" "*S-1-5-32-544:(F)" "*S-1-5-32-545:(R)" /Q | Out-Null
 
   # 4) Unique id of this computer; created only if missing.
   #    If you install from a cloned image, delete agent-id before capturing the image.
