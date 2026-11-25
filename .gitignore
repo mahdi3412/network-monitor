@@ -6,6 +6,8 @@ dist/
 .env
 .env.local
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/*.sqlite
 client/config.json
 .DS_Store

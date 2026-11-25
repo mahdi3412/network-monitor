@@ -6,12 +6,45 @@ const crypto = require("crypto");
 const { execFile } = require("child_process");
 const dns = require("dns");
 
-const AGENT_VERSION = "2.0.0";
-const hiddenMode = process.argv.includes("--hidden");
+// نسخه از client/package.json خوانده می‌شود (نسخه فایل exe هم از همین‌جاست)
+let AGENT_VERSION = "2.0.0";
+try { AGENT_VERSION = require("../package.json").version || AGENT_VERSION; } catch {}
 
-const configPath = path.join(app.getPath("userData"), "config.json");
-const keyPath = path.join(app.getPath("userData"), "agent-key");
-const idPath = path.join(app.getPath("userData"), "agent-id");
+const hiddenMode = process.argv.includes("--hidden");
+// بدون پنجره، شتاب‌دهنده گرافیکی لازم نیست و مصرف منابع را کم می‌کند
+if (hiddenMode) app.disableHardwareAcceleration();
+
+// پوشه مشترک کل سیستم (همه کاربران ویندوز): شناسه و کلید ایجنت و تنظیمات سراسری.
+// با این کار هر کامپیوتر فقط یک رکورد دارد، حتی اگر چند کاربر لاگین کنند.
+// اسکریپت نصب این پوشه را با دسترسی لازم می‌سازد؛ اگر قابل نوشتن نبود از پوشه کاربر استفاده می‌شود.
+const machineDir = process.env.ProgramData ? path.join(process.env.ProgramData, "NetworkMonitor") : "";
+const userDir = app.getPath("userData");
+const userConfigPath = path.join(userDir, "config.json");
+const machineConfigPath = machineDir ? path.join(machineDir, "config.json") : "";
+
+let cachedStateDir = null;
+function stateDir() {
+  if (cachedStateDir) return cachedStateDir;
+  if (machineDir) {
+    try {
+      fs.mkdirSync(machineDir, { recursive: true });
+      fs.accessSync(machineDir, fs.constants.W_OK);
+      cachedStateDir = machineDir;
+      return cachedStateDir;
+    } catch {}
+  }
+  cachedStateDir = userDir;
+  return cachedStateDir;
+}
+
+function readJsonFile(file) {
+  try {
+    // BOM احتمالی (فایل ساخته‌شده با PowerShell) حذف می‌شود
+    return JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    return {};
+  }
+}
 
 // نام، نام خانوادگی و شماره پرسنلی دیگر در ایجنت وارد نمی‌شوند؛
 // سرور آن‌ها را بر اساس username کاربر لاگین‌شده از Active Directory پیدا می‌کند.
@@ -36,32 +69,58 @@ let runtime = {
 
 /* ---------- ذخیره‌سازی محلی ---------- */
 
+// خواندن مقدار ذخیره‌شده؛ اگر فقط در پوشه قدیمی کاربر باشد به پوشه مشترک منتقل می‌شود
+function readState(name) {
+  const primary = stateDir();
+  for (const dir of [primary, userDir]) {
+    try {
+      const value = fs.readFileSync(path.join(dir, name), "utf8").replace(/^\uFEFF/, "").trim();
+      if (!value) continue;
+      if (dir !== primary) {
+        try { fs.writeFileSync(path.join(primary, name), value, { flag: "wx" }); } catch {}
+      }
+      return value;
+    } catch {}
+  }
+  return "";
+}
+function writeState(name, value) {
+  fs.mkdirSync(stateDir(), { recursive: true });
+  fs.writeFileSync(path.join(stateDir(), name), value);
+}
+
 function getKey() {
-  try { return fs.readFileSync(keyPath, "utf8").trim(); } catch { return ""; }
+  return readState("agent-key");
 }
 function saveKey(key) {
-  if (!key) return;
-  fs.mkdirSync(path.dirname(keyPath), { recursive: true });
-  fs.writeFileSync(keyPath, key);
+  if (key) writeState("agent-key", key);
 }
+
+// تنظیمات: پیش‌فرض < تنظیمات کاربر < تنظیمات سراسری (که اسکریپت نصب می‌نویسد)
+// پس آدرس سرور را مدیر به‌صورت مرکزی کنترل می‌کند و کاربر نمی‌تواند عوضش کند.
 function getConfig() {
-  try { return { ...defaults, ...JSON.parse(fs.readFileSync(configPath, "utf8")) }; }
-  catch { return { ...defaults }; }
+  return {
+    ...defaults,
+    ...readJsonFile(userConfigPath),
+    ...(machineConfigPath ? readJsonFile(machineConfigPath) : {})
+  };
 }
 function saveConfig(config) {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+  fs.mkdirSync(path.dirname(userConfigPath), { recursive: true });
+  fs.writeFileSync(userConfigPath, JSON.stringify(config, null, 2));
 }
+
+// ساخت شناسه با فلگ wx: اگر هم‌زمان دو کاربر اولین‌بار اجرا کنند، فقط یک شناسه ساخته می‌شود
 function getAgentId() {
+  const existing = readState("agent-id");
+  if (existing) return existing;
+  const id = crypto.randomUUID();
   try {
-    const id = fs.readFileSync(idPath, "utf8").trim();
-    if (id) return id;
-    throw new Error("empty");
-  } catch {
-    const id = crypto.randomUUID();
-    fs.mkdirSync(path.dirname(idPath), { recursive: true });
-    fs.writeFileSync(idPath, id);
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.writeFileSync(path.join(stateDir(), "agent-id"), id, { flag: "wx" });
     return id;
+  } catch {
+    return readState("agent-id") || id;
   }
 }
 

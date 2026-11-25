@@ -10,6 +10,7 @@
     "start": "next start dashboard",
     "client": "electron client/electron/main.js",
     "dev:client": "electron client/electron/main.js",
+    "build:agent": "npm --prefix client install && npm --prefix client run build",
     "lint": "next lint dashboard"
   },
   "dependencies": {
