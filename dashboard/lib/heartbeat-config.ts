@@ -37,3 +37,12 @@ export function clientStatusFromLastSeen(lastSeen: string | null | undefined, no
   if (!Number.isFinite(timestamp)) return "offline";
   return clientStatus(Math.max(0, now - timestamp));
 }
+
+// مرز زمانی وضعیت‌ها به‌صورت ISO (برای فیلتر در SQL؛ last_seen هم ISO است)
+export function statusCutoffs(now = Date.now()) {
+  const interval = heartbeatIntervalSeconds() * 1000;
+  return {
+    online: new Date(now - interval * 3).toISOString(),
+    recent: new Date(now - interval * 10).toISOString()
+  };
+}
