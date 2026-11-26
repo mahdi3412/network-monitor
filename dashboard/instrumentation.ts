@@ -8,7 +8,7 @@ export async function register() {
 
   const intervalSeconds = Math.max(
     60,
-    Number(process.env.NETWORK_SCAN_INTERVAL_SECONDS || 300)
+    Number(process.env.NETWORK_SCAN_INTERVAL_SECONDS || 900)
   );
 
   const state = globalThis as typeof globalThis & {

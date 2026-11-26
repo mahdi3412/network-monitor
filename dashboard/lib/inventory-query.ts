@@ -14,7 +14,7 @@ export type InventoryQuery = {
 };
 
 // مرتب‌سازی IP به‌صورت عددی (۱۰.۰.۰.۲ قبل ۱۰.۰.۰.۱۰)
-function ipSortExpr(col: string) {
+export function ipSortExpr(col: string) {
   const r1 = `substr(${col},instr(${col},'.')+1)`;
   const r2 = `substr(${r1},instr(${r1},'.')+1)`;
   const r3 = `substr(${r2},instr(${r2},'.')+1)`;

@@ -11,6 +11,7 @@
     "client": "electron client/electron/main.js",
     "dev:client": "electron client/electron/main.js",
     "build:agent": "npm --prefix client install && npm --prefix client run build",
+    "backup": "node dashboard/scripts/backup.mjs",
     "lint": "next lint dashboard"
   },
   "dependencies": {
