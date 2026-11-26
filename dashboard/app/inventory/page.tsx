@@ -98,6 +98,10 @@ const css = `
 .inv .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
 .inv .item{background:#0e1527;border:1px solid #25304a;border-radius:10px;padding:10px}.inv .item span{display:block;color:#8f9bb7;font-size:12px;margin-bottom:4px}.inv .item b{word-break:break-word}
 .inv .hist{width:100%;font-size:13px}.inv .hist td,.inv .hist th{padding:6px 8px;border-top:1px solid #1d2840;text-align:right}
+.inv .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.inv .tab{padding:8px 14px;border-radius:10px;background:#121a2d;border:1px solid #25304a;color:#9eabc6}
+.inv .tab.active{border-color:#4f86d6;background:#162544;color:#fff}
+.inv{padding-bottom:70px}
 @media(max-width:620px){.inv .grid{grid-template-columns:1fr}}
 `;
 
@@ -224,6 +228,11 @@ export default function InventoryPage() {
       <p className="sub">
         همه کامپیوترهایی که Agent دارند، با اطلاعات کاربر از Active Directory. <a href="/">بازگشت به داشبورد اصلی</a>
       </p>
+
+      <div className="tabs">
+        <a className="tab active" href="/inventory">سیستم‌های دارای Agent</a>
+        <a className="tab" href="/inventory/unmanaged">دستگاه‌های بدون Agent</a>
+      </div>
 
       <div className="chips">
         <div className={`chip ${status === "all" && !dupOnly ? "active" : ""}`} onClick={() => pickStatus("all")}>

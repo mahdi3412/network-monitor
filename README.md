@@ -46,7 +46,25 @@ npm run dev      # توسعه: http://localhost:3000
 npm run build && npm start
 ```
 
-سرور شبکه را هر ۵ دقیقه (`NETWORK_SCAN_INTERVAL_SECONDS`) اسکن می‌کند.
+تمام تنظیمات سرور با متغیرهای محیطی است؛ نمونه کامل آن در [`dashboard/.env.example`](dashboard/.env.example) است (کپی به `dashboard/.env.local`).
+
+سرور شبکه را خودش هر ۱۵ دقیقه (`NETWORK_SCAN_INTERVAL_SECONDS=900`) اسکن می‌کند. اسکن هر میزبان زنده چند فرآیند (ping، پورت، nbtstat، WMI) اجرا می‌کند؛ برای شبکه بزرگ فاصله کمتر از ۵ دقیقه توصیه نمی‌شود.
+
+### نصب سرور به‌صورت خودکار (ویندوز)
+
+```
+npm install
+npm run build
+# PowerShell با دسترسی Administrator:
+.\deploy\install-server.ps1 -Port 3000 -RemoteAddress 10.0.0.0/8,192.168.0.0/16
+```
+
+این اسکریپت یک Scheduled Task برای اجرای سرور هنگام بوت (با حساب SYSTEM و راه‌اندازی مجدد در صورت خرابی)، یک بکاپ روزانه و یک قانون فایروال می‌سازد. چون داشبورد احراز هویت ندارد، `-RemoteAddress` را فقط به زیرشبکه‌های کلاینت‌ها و آدرس مدیران محدود کنید. با AD در حالت `integrated` سرویس با حساب کامپیوتری همان سرور به AD می‌رود. حذف: `deploy\uninstall-server.ps1` (دیتابیس پاک نمی‌شود).
+
+### پایش و بکاپ
+
+- **سلامت:** `GET /api/health` — تعداد کلاینت‌ها، آخرین heartbeat، آخرین اسکن، وضعیت همگام‌سازی AD و حجم دیتابیس. وضعیت `ok` یا `degraded` (با فهرست هشدارها)؛ کد 503 یعنی خطای دیتابیس. برای پایش (Uptime Kuma و مشابه) مناسب است.
+- **بکاپ:** `npm run backup` (یا `node dashboard/scripts/backup.mjs`) یک نسخه سازگار از دیتابیس در `data/backups` می‌سازد و `BACKUP_KEEP` (پیش‌فرض ۱۴) نسخه آخر را نگه می‌دارد. بازیابی: سرور را متوقف کنید و فایل بکاپ را به جای `data/network-monitor.db` بگذارید (فایل‌های `-wal` و `-shm` را هم پاک کنید).
 
 ### صفحه موجودی (`/inventory`)
 
@@ -59,6 +77,10 @@ npm run build && npm start
 - کلیک روی هر سیستم: جزئیات کامل و تاریخچه تغییر IP، نام کامپیوتر و کاربر.
 
 API متناظر: `GET /api/inventory?q=&status=&dup=1&sort=&dir=&page=&pageSize=&format=csv`.
+
+### دستگاه‌های بدون Agent (`/inventory/unmanaged`)
+
+دستگاه‌هایی که اسکن سرور دیده ولی Agent ندارند (چاپگر، سویچ، سیستم‌هایی که هنوز Agent ندارند). یک میزبان «بدون Agent» حساب می‌شود اگر هیچ کلاینتی با همان IP (با Agent اخیراً دیده‌شده)، همان MAC یا همان نام کامپیوتر (بدون پسوند دامنه) نداشته باشد. جستجو، فیلتر نوع دستگاه، بازه زمانی «دیده‌شده در N روز»، صفحه‌بندی و خروجی CSV دارد. API: `GET /api/inventory/unmanaged`.
 
 ### تنظیمات مقیاس (تا ۱۰۰۰ کلاینت)
 
@@ -103,4 +125,4 @@ POST /api/directory   {"action":"sync-users"}
 
 ## قدم‌های بعدی
 
-HTTPS، محدود کردن دسترسی شبکه‌ای به داشبورد، افزودن لینک صفحه موجودی به داشبورد اصلی، و در صورت نیاز ایجنت سبک‌تر (Go/.NET) به‌جای Electron.
+HTTPS و در صورت نیاز ایجنت سبک‌تر (Go/.NET) به‌جای Electron.
