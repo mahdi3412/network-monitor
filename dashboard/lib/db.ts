@@ -176,6 +176,24 @@ export async function initDb(): Promise<void> {
     await run("ALTER TABLE clients ADD COLUMN api_key_hash TEXT");
   }
 
+  // ستون‌های مشخصات سخت‌افزار (ارسالی از Agent)
+  const hardwareColumns: Array<[string, string]> = [
+    ["manufacturer", "TEXT"],
+    ["model", "TEXT"],
+    ["serial_number", "TEXT"],
+    ["bios_version", "TEXT"],
+    ["last_boot", "TEXT"],
+    ["disk_total_gb", "REAL"],
+    ["disk_free_gb", "REAL"],
+    ["domain", "TEXT"],
+    ["domain_joined", "INTEGER"]
+  ];
+  for (const [name, type] of hardwareColumns) {
+    if (!clients.some((column) => column.name === name)) {
+      await run(`ALTER TABLE clients ADD COLUMN ${name} ${type}`);
+    }
+  }
+
   const heartbeats = await all<any>("PRAGMA table_info(heartbeats)");
   if (!heartbeats.some((column) => column.name === "latency_ms")) {
     await run("ALTER TABLE heartbeats ADD COLUMN latency_ms INTEGER");

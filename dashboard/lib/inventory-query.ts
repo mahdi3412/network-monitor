@@ -43,7 +43,10 @@ const SEARCH_COLUMNS = [
   "COALESCE(c.username,'')",
   "COALESCE(c.personnel_id,'')",
   "COALESCE(c.os_version,'')",
-  "(COALESCE(c.first_name,'')||' '||COALESCE(c.last_name,''))"
+  "(COALESCE(c.first_name,'')||' '||COALESCE(c.last_name,''))",
+  "COALESCE(c.model,'')",
+  "COALESCE(c.manufacturer,'')",
+  "COALESCE(c.serial_number,'')"
 ];
 
 const ESCAPE = "ESCAPE '\\'";
@@ -60,6 +63,7 @@ function baseSql(where: string) {
   return (
     "SELECT c.id,c.agent_id,c.ip,c.mac,c.hostname,c.username,c.first_name,c.last_name,c.personnel_id," +
     "c.os,c.os_version,c.cpu,c.ram_mb,c.agent_version,c.last_seen,c.created_at," +
+    "c.manufacturer,c.model,c.serial_number,c.bios_version,c.last_boot,c.disk_total_gb,c.disk_free_gb,c.domain,c.domain_joined," +
     `${dup("ip")} AS dup_ip,${dup("mac")} AS dup_mac,${dup("hostname")} AS dup_host ` +
     `FROM clients c ${where}`
   );

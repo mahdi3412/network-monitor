@@ -26,6 +26,15 @@ function pruneHeartbeats() {
 
 const same = (a: unknown, b: unknown) => String(a ?? "") === String(b ?? "");
 
+const textOrNull = (value: unknown, max = 200) => {
+  const text = String(value ?? "").trim().slice(0, max);
+  return text ? text : null;
+};
+const numberOrNull = (value: unknown) => {
+  const number = Number(value);
+  return value !== null && value !== "" && Number.isFinite(number) ? number : null;
+};
+
 type AdIdentity = { firstName: string; lastName: string; personnelId: string };
 
 // نام، نام خانوادگی و شماره پرسنلی از روی username کاربر لاگین‌شده و از جدول
@@ -91,12 +100,23 @@ export async function POST(req: Request) {
     const lastName = identity?.lastName || "";
     const personnelId = identity?.personnelId || "";
 
+    // مشخصات سخت‌افزار (اختیاری؛ Agentهای قدیمی نمی‌فرستند و مقدار قبلی حفظ می‌شود)
+    const hw = body.hardware && typeof body.hardware === "object" ? body.hardware : null;
+    const hardwareValues = hw
+      ? [
+          textOrNull(hw.manufacturer), textOrNull(hw.model), textOrNull(hw.serial, 100),
+          textOrNull(hw.biosVersion, 100), textOrNull(hw.lastBoot, 40),
+          numberOrNull(hw.diskTotalGb), numberOrNull(hw.diskFreeGb),
+          textOrNull(hw.domain, 100), hw.partOfDomain === true || hw.partOfDomain === 1 ? 1 : 0
+        ]
+      : [null, null, null, null, null, null, null, null, null];
+
     await run(
-      "INSERT INTO clients (agent_id,ip,mac,hostname,username,first_name,last_name,personnel_id,os,os_version,cpu,ram_mb,gateway,dns,adapter,agent_version,last_seen,created_at,api_key_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET ip=excluded.ip,mac=excluded.mac,hostname=excluded.hostname,username=excluded.username,first_name=excluded.first_name,last_name=excluded.last_name,personnel_id=excluded.personnel_id,os=excluded.os,os_version=excluded.os_version,cpu=excluded.cpu,ram_mb=excluded.ram_mb,gateway=excluded.gateway,dns=excluded.dns,adapter=excluded.adapter,agent_version=excluded.agent_version,last_seen=excluded.last_seen",
+      "INSERT INTO clients (agent_id,ip,mac,hostname,username,first_name,last_name,personnel_id,os,os_version,cpu,ram_mb,gateway,dns,adapter,agent_version,last_seen,created_at,api_key_hash,manufacturer,model,serial_number,bios_version,last_boot,disk_total_gb,disk_free_gb,domain,domain_joined) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET ip=excluded.ip,mac=excluded.mac,hostname=excluded.hostname,username=excluded.username,first_name=excluded.first_name,last_name=excluded.last_name,personnel_id=excluded.personnel_id,os=excluded.os,os_version=excluded.os_version,cpu=excluded.cpu,ram_mb=excluded.ram_mb,gateway=excluded.gateway,dns=excluded.dns,adapter=excluded.adapter,agent_version=excluded.agent_version,last_seen=excluded.last_seen,manufacturer=COALESCE(excluded.manufacturer,clients.manufacturer),model=COALESCE(excluded.model,clients.model),serial_number=COALESCE(excluded.serial_number,clients.serial_number),bios_version=COALESCE(excluded.bios_version,clients.bios_version),last_boot=COALESCE(excluded.last_boot,clients.last_boot),disk_total_gb=COALESCE(excluded.disk_total_gb,clients.disk_total_gb),disk_free_gb=COALESCE(excluded.disk_free_gb,clients.disk_free_gb),domain=COALESCE(excluded.domain,clients.domain),domain_joined=COALESCE(excluded.domain_joined,clients.domain_joined)",
       [
         agentId, body.ip, body.mac, body.hostname, body.username, firstName, lastName,
         personnelId, body.os, body.osVersion, body.cpu, body.ramMb, body.gateway, body.dns,
-        body.adapter, body.agentVersion, now, now, apiKeyHash
+        body.adapter, body.agentVersion, now, now, apiKeyHash, ...hardwareValues
       ]
     );
 

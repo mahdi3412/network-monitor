@@ -9,7 +9,8 @@ export const revalidate = 0;
 
 const CSV_HEADERS = [
   "نام کامپیوتر", "IP", "MAC", "نام کاربری", "نام", "نام خانوادگی",
-  "شماره پرسنلی", "ویندوز", "وضعیت", "آخرین زمان دیده‌شدن", "تکراری"
+  "شماره پرسنلی", "ویندوز", "وضعیت", "آخرین زمان دیده‌شدن", "تکراری",
+  "سازنده", "مدل", "سریال", "آخرین بوت", "دیسک کل (GB)", "دیسک آزاد (GB)", "دامنه"
 ];
 const STATUS_FA: Record<string, string> = { online: "آنلاین", recent: "اخیراً دیده‌شده", offline: "آفلاین" };
 
@@ -45,7 +46,9 @@ export async function GET(req: Request) {
         const dups = [r.dup_ip && "IP", r.dup_mac && "MAC", r.dup_host && "Hostname"].filter(Boolean).join(" ");
         lines.push(
           [r.hostname, r.ip, r.mac, r.username, r.first_name, r.last_name, r.personnel_id,
-            r.os_version, STATUS_FA[r.status], r.last_seen, dups].map(csvCell).join(",")
+            r.os_version, STATUS_FA[r.status], r.last_seen, dups,
+            r.manufacturer, r.model, r.serial_number, r.last_boot, r.disk_total_gb, r.disk_free_gb, r.domain
+          ].map(csvCell).join(",")
         );
       }
       const day = new Date(now).toISOString().slice(0, 10);

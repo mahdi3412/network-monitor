@@ -17,6 +17,15 @@ type Row = {
   cpu: string | null;
   ram_mb: number | null;
   agent_version: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  bios_version: string | null;
+  last_boot: string | null;
+  disk_total_gb: number | null;
+  disk_free_gb: number | null;
+  domain: string | null;
+  domain_joined: number | null;
   last_seen: string;
   created_at: string;
   status: Status;
@@ -374,6 +383,12 @@ export default function InventoryPage() {
               <div className="item"><span>ویندوز</span><b>{selected.os_version || "-"}</b></div>
               <div className="item"><span>CPU</span><b>{selected.cpu || "-"}</b></div>
               <div className="item"><span>RAM</span><b>{selected.ram_mb ? `${Math.round(selected.ram_mb / 1024)} GB` : "-"}</b></div>
+              <div className="item"><span>سازنده / مدل</span><b>{[selected.manufacturer, selected.model].filter(Boolean).join(" ") || "-"}</b></div>
+              <div className="item"><span>شماره سریال</span><b>{selected.serial_number || "-"}</b></div>
+              <div className="item"><span>نسخه BIOS</span><b>{selected.bios_version || "-"}</b></div>
+              <div className="item"><span>آخرین بوت</span><b>{formatDate(selected.last_boot)}</b></div>
+              <div className="item"><span>دیسک سیستم (آزاد / کل)</span><b>{selected.disk_total_gb ? `${selected.disk_free_gb ?? "-"} / ${selected.disk_total_gb} GB` : "-"}</b></div>
+              <div className="item"><span>دامنه</span><b>{selected.domain ? `${selected.domain}${selected.domain_joined ? "" : " (عضو دامنه نیست)"}` : "-"}</b></div>
               <div className="item"><span>نسخه Agent</span><b>{selected.agent_version || "-"}</b></div>
               <div className="item"><span>اولین بار دیده شد</span><b>{formatDate(selected.created_at)}</b></div>
             </div>
