@@ -2,10 +2,58 @@ import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { all, initDb, run } from "../../../lib/db";
 import { configuredNetworkRanges, inputNetworkRanges } from "../../../lib/network-ranges";
+import {
+  heartbeatHistoryMinutes,
+  heartbeatIntervalSeconds,
+  heartbeatRetentionDays
+} from "../../../lib/heartbeat-config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// حذف تاریخچه قدیمی حداکثر ساعتی یک‌بار و بدون معطل کردن پاسخ ایجنت
+let lastPruneAt = 0;
+function pruneHeartbeats() {
+  const now = Date.now();
+  if (now - lastPruneAt < 60 * 60 * 1000) return;
+  lastPruneAt = now;
+  const cutoff = new Date(now - heartbeatRetentionDays() * 24 * 60 * 60 * 1000).toISOString();
+  run("DELETE FROM heartbeats WHERE received_at < ?", [cutoff]).catch((error) =>
+    console.error("heartbeat prune failed", error)
+  );
+}
+
+const same = (a: unknown, b: unknown) => String(a ?? "") === String(b ?? "");
+
+type AdIdentity = { firstName: string; lastName: string; personnelId: string };
+
+// نام، نام خانوادگی و شماره پرسنلی از روی username کاربر لاگین‌شده و از جدول
+// directory_users (همگام‌شده با Active Directory) پیدا می‌شود، نه از ورودی ایجنت.
+async function resolveAdIdentity(username: unknown, domain: unknown, hostname: unknown): Promise<AdIdentity | null> {
+  const raw = String(username || "").trim();
+  const sam = raw.includes("\\") ? raw.split("\\").pop() || "" : raw.split("@")[0];
+  if (!sam || sam.endsWith("$") || /^(system|local service|network service)$/i.test(sam)) return null;
+
+  // اگر «دامنه» برابر نام خود کامپیوتر باشد یعنی حساب محلی است، نه حساب AD
+  const dom = String(domain || "").trim().toLowerCase();
+  const host = String(hostname || "").trim().toLowerCase();
+  if (dom && host && dom === host) return null;
+
+  const rows = await all<any>(
+    "SELECT personnel_id,first_name,last_name FROM directory_users WHERE lower(username)=lower(?) LIMIT 1",
+    [sam]
+  );
+  if (!rows.length) return null;
+
+  // کاربرانی که employeeID ندارند با شناسه جایگزین «__ad_user__:...» ذخیره شده‌اند
+  const pid = String(rows[0].personnel_id || "");
+  return {
+    firstName: String(rows[0].first_name || ""),
+    lastName: String(rows[0].last_name || ""),
+    personnelId: pid.startsWith("__ad_user__:") ? "" : pid
+  };
+}
 
 export async function POST(req: Request) {
   try {
@@ -23,7 +71,7 @@ export async function POST(req: Request) {
     const latencyMs = Number.isFinite(rawLatency) ? Math.max(0, Math.round(rawLatency)) : null;
 
     const existing = await all<any>(
-      "SELECT api_key_hash FROM clients WHERE agent_id=?",
+      "SELECT api_key_hash,ip,hostname,username FROM clients WHERE agent_id=?",
       [agentId]
     );
 
@@ -38,19 +86,40 @@ export async function POST(req: Request) {
     const apiKey = existing.length ? key : crypto.randomBytes(24).toString("hex");
     const apiKeyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
 
+    const identity = await resolveAdIdentity(body.username, body.domain, body.hostname);
+    const firstName = identity?.firstName || "";
+    const lastName = identity?.lastName || "";
+    const personnelId = identity?.personnelId || "";
+
     await run(
       "INSERT INTO clients (agent_id,ip,mac,hostname,username,first_name,last_name,personnel_id,os,os_version,cpu,ram_mb,gateway,dns,adapter,agent_version,last_seen,created_at,api_key_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(agent_id) DO UPDATE SET ip=excluded.ip,mac=excluded.mac,hostname=excluded.hostname,username=excluded.username,first_name=excluded.first_name,last_name=excluded.last_name,personnel_id=excluded.personnel_id,os=excluded.os,os_version=excluded.os_version,cpu=excluded.cpu,ram_mb=excluded.ram_mb,gateway=excluded.gateway,dns=excluded.dns,adapter=excluded.adapter,agent_version=excluded.agent_version,last_seen=excluded.last_seen",
       [
-        agentId, body.ip, body.mac, body.hostname, body.username, body.firstName, body.lastName,
-        body.personnelId, body.os, body.osVersion, body.cpu, body.ramMb, body.gateway, body.dns,
+        agentId, body.ip, body.mac, body.hostname, body.username, firstName, lastName,
+        personnelId, body.os, body.osVersion, body.cpu, body.ramMb, body.gateway, body.dns,
         body.adapter, body.agentVersion, now, now, apiKeyHash
       ]
     );
 
-    await run(
-      "INSERT INTO heartbeats(agent_id,ip,hostname,username,received_at,latency_ms) VALUES(?,?,?,?,?,?)",
-      [agentId, body.ip, body.hostname, body.username, now, latencyMs]
-    );
+    // تاریخچه فقط هنگام تغییر IP/نام/کاربر یا حداکثر هر HEARTBEAT_HISTORY_MINUTES دقیقه ذخیره می‌شود
+    const previous = existing[0];
+    let writeHistory =
+      !previous ||
+      !same(previous.ip, body.ip) ||
+      !same(previous.hostname, body.hostname) ||
+      !same(previous.username, body.username);
+
+    if (!writeHistory) {
+      const last = await all<any>("SELECT MAX(received_at) AS t FROM heartbeats WHERE agent_id=?", [agentId]);
+      const lastMs = last[0]?.t ? new Date(last[0].t).getTime() : 0;
+      writeHistory = Date.now() - lastMs >= heartbeatHistoryMinutes() * 60 * 1000;
+    }
+
+    if (writeHistory) {
+      await run(
+        "INSERT INTO heartbeats(agent_id,ip,hostname,username,received_at,latency_ms) VALUES(?,?,?,?,?,?)",
+        [agentId, body.ip, body.hostname, body.username, now, latencyMs]
+      );
+    }
 
     const hosts = Array.isArray(body.networkHosts) ? body.networkHosts : [];
 
@@ -103,14 +172,12 @@ export async function POST(req: Request) {
       );
     }
 
-    await run(
-      "DELETE FROM heartbeats WHERE received_at < ?",
-      [new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()]
-    );
+    pruneHeartbeats();
 
     return NextResponse.json({
       ok: true,
       serverTime: now,
+      heartbeatSeconds: heartbeatIntervalSeconds(),
       agentKey: existing.length ? undefined : apiKey,
       receivedHosts: hosts.length,
       knownRanges: allRanges.length

@@ -1,0 +1,23 @@
+{
+  "name": "network-monitor-agent",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Network Monitor client agent",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "local.networkmonitor.agent",
+    "productName": "NetworkMonitorAgent",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "package.json"],
+    "asar": true,
+    "win": { "target": "dir" }
+  }
+}
