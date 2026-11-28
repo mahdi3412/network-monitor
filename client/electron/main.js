@@ -57,6 +57,9 @@ let mainWindow = null;
 let heartbeatTimer = null;
 let networkInfo = { gateway: "", interfaceIp: "", dns: "" };
 let osInfo = { version: "" };
+let hardware = {};
+let hardwareLoadedAt = 0;
+const HARDWARE_REFRESH_MS = 6 * 60 * 60 * 1000;
 let runtime = {
   connected: false,
   lastAttempt: null,
@@ -209,6 +212,33 @@ async function loadOsInfo() {
   osInfo = { version: buildText ? `${name} (build ${buildText})` : name };
 }
 
+// مشخصات سخت‌افزار (سازنده، مدل، سریال، BIOS، آخرین بوت، دیسک، دامنه) با یک فراخوانی PowerShell.
+// هر ۶ ساعت یک‌بار تازه می‌شود؛ اسکریپت با -EncodedCommand ارسال می‌شود تا مشکل quote نداشته باشد.
+const HARDWARE_SCRIPT = [
+  "$ErrorActionPreference='SilentlyContinue'",
+  "$cs=Get-CimInstance Win32_ComputerSystem",
+  "$bios=Get-CimInstance Win32_BIOS",
+  "$os=Get-CimInstance Win32_OperatingSystem",
+  "$d=Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DeviceID -eq $env:SystemDrive }",
+  "[pscustomobject]@{",
+  "manufacturer=$cs.Manufacturer;model=$cs.Model;domain=$cs.Domain;partOfDomain=[bool]$cs.PartOfDomain;",
+  "serial=$bios.SerialNumber;biosVersion=$bios.SMBIOSBIOSVersion;",
+  "lastBoot=$os.LastBootUpTime.ToUniversalTime().ToString('o');",
+  "diskTotalGb=[math]::Round($d.Size/1GB,1);diskFreeGb=[math]::Round($d.FreeSpace/1GB,1)",
+  "} | ConvertTo-Json -Compress"
+].join("\n");
+
+async function loadHardware() {
+  if (process.platform !== "win32") return;
+  const encoded = Buffer.from(HARDWARE_SCRIPT, "utf16le").toString("base64");
+  const out = await run("powershell", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], 20000);
+  try {
+    const parsed = JSON.parse(out.trim());
+    if (parsed && typeof parsed === "object") hardware = parsed;
+  } catch {}
+  hardwareLoadedAt = Date.now();
+}
+
 async function refreshNetworkInfo() {
   const route = await getDefaultRoute();
   networkInfo.gateway = route.gateway;
@@ -235,6 +265,7 @@ function collect() {
     ramMb: Math.round(os.totalmem() / 1024 / 1024),
     gateway: networkInfo.gateway,
     dns: networkInfo.dns,
+    hardware,
     agentVersion: AGENT_VERSION
   };
 }
@@ -257,6 +288,7 @@ async function heartbeat() {
   publish();
   try {
     await refreshNetworkInfo();
+    if (Date.now() - hardwareLoadedAt > HARDWARE_REFRESH_MS) await loadHardware();
     const response = await fetch(String(c.serverUrl).replace(/\/$/, "") + "/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json", ...(getKey() ? { "x-agent-key": getKey() } : {}) },
